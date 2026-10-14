@@ -1,8 +1,8 @@
-"""Centralized system and HTTP constants for neural-network-design package."""
+from python_shared.http.constants import HTTP_CONSTANTS
 
-HTTP_HEADER_TRACEPARENT: str = "traceparent"
-HTTP_HEADER_REQUEST_ID: str = "x-request-id"
-HTTP_HEADER_CORRELATION_ID: str = "x-correlation-id"
+HTTP_HEADER_TRACEPARENT: str = HTTP_CONSTANTS.HEADER_TRACEPARENT
+HTTP_HEADER_REQUEST_ID: str = HTTP_CONSTANTS.HEADER_X_REQUEST_ID
+HTTP_HEADER_CORRELATION_ID: str = HTTP_CONSTANTS.HEADER_X_CORRELATION_ID
 
 STATUS_PENDING: str = "PENDING"
 STATUS_ACTIVE: str = "ACTIVE"
