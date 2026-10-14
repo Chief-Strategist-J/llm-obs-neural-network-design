@@ -1,44 +1,47 @@
-# Neural Network Design Service: Roadmap & Technical Debt Ledger
+# Neural Network Design Service: 6-Month Architectural Roadmap & Critical Debt Ledger
 
-This document tracks critical invariants, pending architectural deliverables, and future roadmap items for the `neural-network-design` package.
-
----
-
-## 1. What Is Actually Critical (Production Gate Invariants)
-
-These items directly safeguard system correctness, physical causality, and prevent production model regressions:
-
-- [x] **Leak-Free Trace-Boundary Splitting**: Guarantee zero `trace_id` overlap between training and validation partitions.
-- [x] **Temporal Causality Preservation**: Enforce strict chronological separation ($T_{\text{train}} < T_{\text{val}}$) to prevent future telemetry states from leaking into past inference windows.
-- [x] **Trivial Baseline Gate Enforcement**: No neural network specification or checkpoint can transition to `ACTIVE` without beating running heuristic baselines (majority class and rolling mean).
-- [ ] **Adaptive Loss Weighting for Catastrophic Imbalance**: Telemetry failures constitute < 0.1% of records. Focal Loss or effective-sample class-balanced weights must be integrated to prevent gradient collapse to zero-prediction.
-- [ ] **Streaming Quantile (t-digest / DDSketch) Baselines**: Implement wire-speed CPU baseline evaluators to sit immediately before PyTorch inference.
+This ledger defines the strict 6-month engineering schedule, critical system invariants, and technical deliverables required to evolve `neural-network-design` into a high-throughput hybrid telemetry engine.
 
 ---
 
-## 2. What Is Currently Pending (Active Backlog)
+## 1. Executive Summary & Critical Invariants
 
-Items scoped for stabilization and local engine refinement:
+[Certain] Deep neural networks are computationally wasteful and operational liabilities when applied blindly to time-series telemetry. This package exists strictly as a **two-tier hybrid engine**:
+1. **Tier 1 (Fast-Path Filter & Statistical Guardrail)**: Microsecond-latency CPU heuristics (EWMA, CUSUM, streaming quantiles, GBDTs) inspect 100% of telemetry spans.
+2. **Tier 2 (Deep Contextual Reasoner)**: PyTorch networks are invoked only when multi-service trace topologies exhibit ambiguity that scalar rules cannot resolve.
 
-- [ ] **Streaming Baseline Adapters**:
-  - Add EWMA (Exponentially Weighted Moving Average) and CUSUM (Cumulative Sum) statistical state filters in `src/features/telemetry_pipeline/`.
-  - Add tabular decision tree baseline (XGBoost / LightGBM) integration port for structured tabular metric frames.
-- [ ] **Checkpoint Serialization & Storage Port**:
-  - Implement durable state-checkpoint adapter (`S3` / `GCS` / local artifacts directory) for PyTorch `.pt` models managed by the lifecycle state machine.
-- [ ] **Real-time Kafka Consumer Loop**:
-  - Implement a persistent background worker thread that drains `telemetry.spans.raw` and pipes batches directly into `TelemetryPipelineService`.
+### Non-Negotiable Gate Invariants
+- **Zero Trace Leakage**: No `trace_id` may ever co-exist across training and validation partitions.
+- **Strict Physical Causality**: Telemetry partitions must maintain strict chronological ordering ($T_{\text{train}} < T_{\text{val}}$).
+- **Trivial Baseline Rule**: No deep neural network checkpoint may be promoted to `ACTIVE` status unless it demonstrates a statistically significant improvement over running majority-class and rolling-mean baselines.
+- **Zero Comment Invariant**: All implementation code must strictly maintain zero inline comments, relying on explicit typing and hexagonal module boundaries.
 
 ---
 
-## 3. What Needs to Be Done in the Future (Long-Term Scalability Roadmap)
+## 2. 6-Month Phased Roadmap Table (Months 1–6)
 
-Items required when scaling from single-node training to distributed enterprise scale:
+| Milestone & Month | Epic / Focus Area | Critical Deliverables & Technical Tasks | Primary Architectural Risk | Acceptance Criteria & Gate Metric |
+| :--- | :--- | :--- | :--- | :--- |
+| **Month 1: Foundation & Statistical Fast-Path** | Wire-Speed Classical Baselines | • Implement streaming EWMA & CUSUM stateful filters in `src/features/telemetry_pipeline/`.<br>• Implement DDSketch / t-digest streaming quantile estimators.<br>• Implement XGBoost tabular baseline port with zero GPU dependency. | Over-allocating memory in long-running streaming quantile windows. | Heuristic baselines evaluate spans in $< 15\,\mu\text{s}$ per record on CPU with $O(1)$ memory. |
+| **Month 2: Streaming Ingestion & Real-Time Worker** | Persistent Streaming Consumer Loop | • Implement dedicated background Kafka worker loop draining `telemetry.spans.raw`.<br>• Enforce distributed tracing W3C context propagation across span micro-batches.<br>• Implement Dead-Letter Queue (DLQ) routing for corrupted telemetry payloads. | Consumer lag accumulation under sudden telemetry burst traffic ($> 50\text{k}$ spans/sec). | End-to-end Kafka-to-pipeline latency $< 100\,\text{ms}$; zero span drops; DLQ captures all unparseable payloads. |
+| **Month 3: Loss Formulations & Checkpoint Storage** | Severe Imbalance & Durability Port | • Implement Focal Loss and class-balanced effective-sample cross-entropy to handle catastrophic failure rates ($< 0.1\%$).<br>• Implement durable `CheckpointStoragePort` (S3/MinIO/GCS & local disk adapter) with SHA-256 integrity verification.<br>• Add automated model rollbacks if inference latency breaches SLA. | Gradient collapse to zero-prediction due to extreme class imbalance in telemetry. | Model achieves recall $> 85\%$ on rare failure classes ($< 0.1\%$ prevalence); checkpoint serialization succeeds with verified checksums. |
+| **Month 4: Dynamic Hybrid Routing** | Uncertainty-Gated Inference Engine | • Implement predictive entropy scoring on incoming telemetry batches.<br>• Implement fast-path router: direct $> 95\%$ of low-entropy spans to Tier 1 classical baselines.<br>• Route only ambiguous/high-entropy topological spans to PyTorch Tensor Core. | High inference latency on cold-start neural model evaluation. | Total GPU compute reduced by $\ge 90\%$; aggregate pipeline P99 latency $< 20\,\text{ms}$. |
+| **Month 5: Topology Modeling via Graph Neural Networks** | Microservice DAG Representation | • Transform multi-span distributed traces into Directed Acyclic Graphs (DAGs).<br>• Implement Graph Convolutional Network (GCN / GAT) module using PyTorch Geometric.<br>• Benchmark GNN cascade-prediction accuracy against linear MLP and XGBoost baselines. | Graph construction overhead dominating execution time over tabular batching. | GNN out-predicts XGBoost by $\ge 15\%$ on multi-hop cascade failures across $> 10$ services. |
+| **Month 6: Continuous Closed-Loop Retraining** | Autonomous Drift Detection & Promotion | • Implement automated drift detection using Kolmogorov-Smirnov and Population Stability Index (PSI) on streaming metrics.<br>• Trigger candidate model training upon confirmed distribution drift.<br>• Enforce automated promotion gate: candidate must beat production model and baseline gate for 24h of historical playback. | Model thrashing or training on corrupted distribution anomalies. | Zero-downtime hot-swapping of neural weights; automated rollback on validation regression. |
 
-- [ ] **Distributed Data Parallel (DDP) & Ray Integration**:
-  - Decouple `PyTorchOverfitEngine` into a distributed worker orchestrator using Ray Train or Torchrun for multi-GPU training.
-- [ ] **Graph Neural Network (GNN) for Service Topologies**:
-  - Microservice traces form Directed Acyclic Graphs (DAGs). Migrate complex trace inference from simple MLPs to Graph Convolutional Networks (GCN / GAT) where nodes represent services and edges represent RPC spans.
-- [ ] **Dynamic Hybrid Routing Engine**:
-  - Implement an uncertainty-gated routing policy: route 98% of low-entropy telemetry queries to streaming quantiles/EWMA, and trigger the PyTorch model only when entropy exceeds the threshold.
-- [ ] **Automated Concept Drift & Continuous Retraining Daemon**:
-  - Detect covariate and concept drift via Kolmogorov-Smirnov / Population Stability Index (PSI) tests on incoming Kafka streams, automatically triggering candidate retraining workflows.
+---
+
+## 3. Detailed Component Backlog & Risk Matrix
+
+| Component | Priority | Status | Description & What Is Actually Required | Risk Level |
+| :--- | :--- | :--- | :--- | :--- |
+| `TelemetrySplitRules` | P0 (Critical) | **Done** | Pure functional rules enforcing trace-boundary isolation and temporal lookahead prevention. | Low |
+| `TrivialBaselineWorkflow` | P0 (Critical) | **Done** | Mathematical verification that neural architectures outperform majority-class frequency and rolling mean. | Low |
+| `AdaptiveLossCore` | P0 (Critical) | **Pending** | Focal Loss and class-balanced cost functions required to stop models from predicting zero failures. | High |
+| `StreamingBaselinePort` | P0 (Critical) | **Pending** | Wire-speed EWMA, CUSUM, and DDSketch streaming filters to bypass deep inference on standard telemetry. | Medium |
+| `KafkaWorkerDaemon` | P1 (High) | **Pending** | Production background process consuming `telemetry.spans.raw` and feeding continuous pipeline batches. | Medium |
+| `CheckpointStorageAdapter` | P1 (High) | **Pending** | S3/MinIO/GCS adapter storing model weights with SHA-256 verification and atomic metadata locking. | Medium |
+| `UncertaintyRouter` | P1 (High) | **Pending** | Entropy-based gateway directing low-complexity spans to classical baselines and complex spans to neural layers. | Medium |
+| `TraceGraphBuilder` | P2 (Medium) | **Planned** | Pure conversion of multi-span OpenTelemetry traces into PyTorch Geometric graph tensors. | High |
+| `DriftMonitorDaemon` | P2 (Medium) | **Planned** | Streaming statistical testing (PSI / KS-test) detecting feature drift and triggering closed-loop retraining. | Medium |
+| `DistributedRayTrainer` | P3 (Low) | **Planned** | Multi-GPU distributed training using Ray Train or Torchrun for hyperparameter sweeps and heavy topology models. | Medium |
