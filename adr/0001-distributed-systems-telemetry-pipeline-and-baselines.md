@@ -1,14 +1,14 @@
-# 0001: Distributed Systems Neural Telemetry & Optimization Engine: Data Integrity, Self-Learning Closed-Loop, Leak-Free Evaluation, and PyTorch Tensor Core
+# 0001: Distributed Systems Neural Telemetry and Optimization Engine: Data Integrity, Self-Learning Closed-Loop, Leak-Free Evaluation, and PyTorch Tensor Core
 
 - **Status**: Accepted
 - **Date**: 2026-10-14
-- **Authors**: Platform Architecture & Core Neural Systems Team
+- **Authors**: Platform Architecture and Core Neural Systems Team
 - **RFC / Standards**: IEEE 754 (Floating-Point Arithmetic), OpenTelemetry W3C TraceContext RFC, ISO/IEC 25010 (System and Software Quality Models)
 - **Deciders**: Lead Systems Architect, Distributed Systems Lead, Machine Learning Infrastructure Engineer
 
 ---
 
-## 1. Context & Problem Statement
+## 1. Context and Problem Statement
 
 Building neural networks for distributed systems telemetry (e.g. trace cascade failures, temporal worker lag, query latency spikes, and microservice anomaly detection) suffers from an engineering pathology: **practitioners jump directly into layer architecture, activation functions, and hyperparameter tuning while ignoring data integrity, objective alignment, and evaluation protocols**.
 
@@ -21,7 +21,7 @@ In distributed systems:
 
 ---
 
-## 2. Decision Drivers & Core Principles
+## 2. Decision Drivers and Core Principles
 
 1. **Mandatory Inversion of Priority**: Enforce data pipeline validation, label audit, and leak-free split generation before model code or training weights are initialized.
 2. **Zero-Leakage Splitting Engine**: Guarantee trace-disjoint and temporally monotonic splits ($\text{TrainTraces} \cap \text{ValTraces} = \emptyset$ and $\max(\text{TrainTimestamp}) \le \min(\text{ValTimestamp})$).
@@ -29,7 +29,7 @@ In distributed systems:
 4. **Optimization Stability First**: Guarantee stable gradient propagation via Kaiming uniform weight initialization, Layer Normalization (`LayerNorm`), and residual skip connections.
 5. **Tiny-Batch Overfitting Gate**: Mandate that models overfit 10–100 samples to near-zero loss ($\le 0.08$) to prove graph autograd validity before scaling compute.
 6. **Continuous Autonomous Self-Learning Closed-Loop**: Telemetry inference errors, prediction drift, and production ground-truth discrepancies continuously feed back into the dataset repository, trigger automated re-benchmarking against the trivial baseline, and drive autonomous retraining.
-7. **Feature Consolidation & Isolation**: Consolidate neural architectures and overfit verification into the existing `network_spec` feature (`src/features/network_spec/`), while isolating pure data ingestion in `system_telemetry_pipeline`.
+7. **Feature Consolidation and Isolation**: Consolidate neural architectures and overfit verification into the existing `network_spec` feature (`src/features/network_spec/`), while isolating pure data ingestion in `system_telemetry_pipeline`.
 
 ---
 
@@ -42,23 +42,23 @@ The High-Level Architecture establishes a resilient, decoupled data-plane and co
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E8F0FE', 'primaryBorderColor': '#1A73E8', 'primaryTextColor': '#202124', 'lineColor': '#1A73E8', 'secondaryColor': '#CEEAD6', 'tertiaryColor': '#FEEFC3', 'mainBkg': '#FFFFFF', 'nodeBorder': '#1A73E8'}}}%%
 flowchart TD
-    subgraph INGRESS["Telemetry Producers & Ingress Plane"]
+    subgraph INGRESS["Telemetry Producers and Ingress Plane"]
         PROD1["Microservice Tracers / SDKs"]
         PROD2["LLM Gateway Spans"]
         PROD3["Worker Task Telemetry"]
     end
 
     subgraph STREAMING["High-Throughput Streaming Backbone (Kafka)"]
-        KAFKA_TOPIC["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal & Trace-Disjoint"]
+        KAFKA_TOPIC["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal and Trace-Disjoint"]
     end
 
     subgraph FAST_PATH["Real-Time Anomaly Scoring (Inference Plane)"]
         INFER_WORKER["Streaming Inference Worker"]
         PYTORCH_ACTIVE["Active PyTorch Checkpoint\n(LayerNorm + GELU + ResBlocks)"]
-        ALERTER["Anomaly & Drift Dispatcher"]
+        ALERTER["Anomaly and Drift Dispatcher"]
     end
 
-    subgraph SLOW_PATH["Continuous Learning & Self-Tuning Closed-Loop"]
+    subgraph SLOW_PATH["Continuous Learning and Self-Tuning Closed-Loop"]
         STREAM_BUFFER["Sliding Temporal Buffer\n(Temporal Group Disjoint Partition)"]
         SPLIT_ENGINE["TelemetrySplitRules\n(Zero-Leakage Assertion)"]
         BASELINE_ENGINE["TrivialBaselineWorkflow\n(Majority Class Benchmark)"]
@@ -68,7 +68,7 @@ flowchart TD
 
     subgraph PERSISTENCE["Operational Storage Tier"]
         ALLOYDB["Postgres / AlloyDB Storage\n(WAL, Specs, Checkpoints, Metrics)"]
-        NEO4J["Neo4j Dependency Graph\n(Trace Causality & Service Topology)"]
+        NEO4J["Neo4j Dependency Graph\n(Trace Causality and Service Topology)"]
     end
 
     PROD1 -->|Partitioned by trace_id| KAFKA_TOPIC
@@ -78,7 +78,7 @@ flowchart TD
     KAFKA_TOPIC -->|Consumer Group: inference-group| INFER_WORKER
     INFER_WORKER -->|Forward Pass| PYTORCH_ACTIVE
     PYTORCH_ACTIVE -->|Score > Threshold| ALERTER
-    INFER_WORKER -->|Inference Logs & Predictions| ALLOYDB
+    INFER_WORKER -->|Inference Logs and Predictions| ALLOYDB
 
     KAFKA_TOPIC -->|Consumer Group: training-buffer-group| STREAM_BUFFER
     STREAM_BUFFER -->|Chronological Batches| SPLIT_ENGINE
@@ -95,23 +95,23 @@ flowchart TD
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
 flowchart TD
-    subgraph INGRESS_DARK["Telemetry Producers & Ingress Plane"]
+    subgraph INGRESS_DARK["Telemetry Producers and Ingress Plane"]
         D_PROD1["Microservice Tracers / SDKs"]
         D_PROD2["LLM Gateway Spans"]
         D_PROD3["Worker Task Telemetry"]
     end
 
     subgraph STREAMING_DARK["High-Throughput Streaming Backbone (Kafka)"]
-        D_KAFKA["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal & Trace-Disjoint"]
+        D_KAFKA["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal and Trace-Disjoint"]
     end
 
     subgraph FAST_PATH_DARK["Real-Time Anomaly Scoring (Inference Plane)"]
         D_INFER["Streaming Inference Worker"]
         D_PYTORCH["Active PyTorch Checkpoint\n(LayerNorm + GELU + ResBlocks)"]
-        D_ALERTER["Anomaly & Drift Dispatcher"]
+        D_ALERTER["Anomaly and Drift Dispatcher"]
     end
 
-    subgraph SLOW_PATH_DARK["Continuous Learning & Self-Tuning Closed-Loop"]
+    subgraph SLOW_PATH_DARK["Continuous Learning and Self-Tuning Closed-Loop"]
         D_BUFFER["Sliding Temporal Buffer\n(Temporal Group Disjoint Partition)"]
         D_SPLIT["TelemetrySplitRules\n(Zero-Leakage Assertion)"]
         D_BASELINE["TrivialBaselineWorkflow\n(Majority Class Benchmark)"]
@@ -121,7 +121,7 @@ flowchart TD
 
     subgraph PERSISTENCE_DARK["Operational Storage Tier"]
         D_ALLOYDB["Postgres / AlloyDB Storage\n(WAL, Specs, Checkpoints, Metrics)"]
-        D_NEO4J["Neo4j Dependency Graph\n(Trace Causality & Service Topology)"]
+        D_NEO4J["Neo4j Dependency Graph\n(Trace Causality and Service Topology)"]
     end
 
     D_PROD1 -->|Partitioned by trace_id| D_KAFKA
@@ -131,7 +131,7 @@ flowchart TD
     D_KAFKA -->|Consumer Group: inference-group| D_INFER
     D_INFER -->|Forward Pass| D_PYTORCH
     D_PYTORCH -->|Score > Threshold| D_ALERTER
-    D_INFER -->|Inference Logs & Predictions| D_ALLOYDB
+    D_INFER -->|Inference Logs and Predictions| D_ALLOYDB
 
     D_KAFKA -->|Consumer Group: training-buffer-group| D_BUFFER
     D_BUFFER -->|Chronological Batches| D_SPLIT
@@ -145,11 +145,11 @@ flowchart TD
 
 ---
 
-## 3.3 Low-Level Architecture (LLD) & Subsystem Internals
+## 3.3 Low-Level Architecture (LLD) and Subsystem Internals
 
 The low-level design maps hexagonal architectural boundaries across ports, adapters, pure rules, domain workflows, and storage adapters.
 
-### 3.3.1 Component Interaction & Class Topology (Light Theme)
+### 3.3.1 Component Interaction and Class Topology (Light Theme)
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E1F5FE', 'primaryBorderColor': '#0288D1', 'primaryTextColor': '#01579B', 'lineColor': '#0288D1', 'secondaryColor': '#E8F5E9', 'tertiaryColor': '#FFF3E0', 'mainBkg': '#FFFFFF', 'nodeBorder': '#0288D1'}}}%%
@@ -218,7 +218,7 @@ classDiagram
     PyTorchNeuralComputeAdapter --> PyTorchNeuralArchitecture : computes
 ```
 
-### 3.3.2 Component Interaction & Class Topology (Dark Theme)
+### 3.3.2 Component Interaction and Class Topology (Dark Theme)
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1E293B', 'primaryBorderColor': '#38BDF8', 'primaryTextColor': '#F1F5F9', 'lineColor': '#38BDF8', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#0F172A', 'nodeBorder': '#38BDF8'}}}%%
@@ -289,7 +289,7 @@ classDiagram
 
 ---
 
-## 3.4 Ingress Execution Flow & End-to-End Sequence
+## 3.4 Ingress Execution Flow and End-to-End Sequence
 
 ```mermaid
 sequenceDiagram
@@ -304,22 +304,22 @@ sequenceDiagram
     participant DB as Postgres / AlloyDB Cluster
     participant OTEL as OpenTelemetry Collector
 
-    Note over Client,OTEL: Step 1: High-Throughput Streaming & Zero-Leakage Split
+    Note over Client,OTEL: Step 1: High-Throughput Streaming and Zero-Leakage Split
     Client->>Kafka: Produce telemetry records (Key: trace_id)
     Kafka-->>PipelineService: Stream consumption micro-batch
     PipelineService->>OTEL: Start Root Span ("telemetry_pipeline.consume")
     
     PipelineService->>SplitRules: execute_leak_free_split(records, train_ratio)
-    Note over SplitRules: Group by trace_id & sort chronologically.<br/>Assert: TrainTraces ∩ ValTraces = ∅<br/>Assert: max(TrainTs) <= min(ValTs)
+    Note over SplitRules: Group by trace_id and sort chronologically.<br/>Assert: TrainTraces ∩ ValTraces = ∅<br/>Assert: max(TrainTs) <= min(ValTs)
     SplitRules-->>PipelineService: DatasetSplitResult (Zero Leakage Verified)
     
     PipelineService->>BaselineFlow: execute_foundation_flow(DatasetSplitResult)
-    Note over BaselineFlow: Compute Empirical Prior & Majority Class.<br/>Evaluate Accuracy, Precision, Recall, F1 on Val split.
+    Note over BaselineFlow: Compute Empirical Prior and Majority Class.<br/>Evaluate Accuracy, Precision, Recall, F1 on Val split.
     BaselineFlow-->>PipelineService: BaselineEvaluationResult
-    PipelineService->>DB: INSERT INTO telemetry_pipeline_records & baseline_benchmarks
+    PipelineService->>DB: INSERT INTO telemetry_pipeline_records and baseline_benchmarks
     PipelineService-->>Kafka: Commit offset asynchronously
 
-    Note over Client,OTEL: Step 2: Initialize PyTorch Network & Verify Tiny-Batch Overfit
+    Note over Client,OTEL: Step 2: Initialize PyTorch Network and Verify Tiny-Batch Overfit
     Client->>SpecService: verify_tiny_batch_overfit(TinyBatchOverfitCommand)
     SpecService->>OTEL: Start Span ("network_spec.verify_overfit")
     SpecService->>PyTorchAdapter: fit_and_verify_overfit(model_spec, command)
@@ -327,84 +327,107 @@ sequenceDiagram
     PyTorchAdapter-->>SpecService: initial_loss, final_loss, steps, is_overfit=True
     SpecService->>DB: UPDATE network_specs SET status = 'TINY_BATCH_OVERFIT_VERIFIED'
     SpecService-->>Client: Result.ok(NetworkSpecModel: TINY_BATCH_OVERFIT_VERIFIED)
-    SpecService->>OTEL: Set Span Status OK & End Span
+    SpecService->>OTEL: Set Span Status OK and End Span
 
-    Note over Client,OTEL: Step 3: Production Serving & Autonomous Self-Learning Closed-Loop
+    Note over Client,OTEL: Step 3: Production Serving and Autonomous Self-Learning Closed-Loop
     Kafka->>PyTorchAdapter: Online Telemetry Vector x
     PyTorchAdapter-->>Client: Inference Prediction (Anomaly / Outage Probability)
-    Note over SpecService,DB: Error Analysis & Drift Engine detects discrepancy or false positive.<br/>Failure records appended to active telemetry pool.<br/>Triggers automatic retraining workflow when drift threshold is exceeded.
+    Note over SpecService,DB: Error Analysis and Drift Engine detects discrepancy or false positive.<br/>Failure records appended to active telemetry pool.<br/>Triggers automatic retraining workflow when drift threshold is exceeded.
 ```
 
 ---
 
-## 4. End-to-End Pipeline & Component Relationships (The Complete Learning Loop)
+## 4. End-to-End Pipeline and Component Relationships (The Complete Learning Loop)
 
+The end-to-end learning loop operates as a closed cybernetic system where telemetry streams flow through continuous evaluation, and validation metrics directly govern the training and data selection phases.
+
+### 4.1 End-to-End Pipeline Diagram (Light Theme)
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E8F0FE', 'primaryBorderColor': '#1A73E8', 'primaryTextColor': '#202124', 'lineColor': '#1A73E8', 'secondaryColor': '#CEEAD6', 'tertiaryColor': '#FEEFC3', 'mainBkg': '#FFFFFF', 'nodeBorder': '#1A73E8'}}}%%
+flowchart TD
+    PROBLEM["Problem Definition and Success Criteria"] --> DATA_COLLECT["Data Ingestion and Sanitization"]
+    DATA_COLLECT --> CAUSAL_SPLIT["Causal Split (Train, Val, Test)"]
+    CAUSAL_SPLIT --> PREPROCESS["Preprocessing and Z-Score Scaling"]
+    PREPROCESS --> DATALOADER["Streaming DataLoader"]
+    DATALOADER --> MODEL["Model (Embeddings, Residual Blocks, Head)"]
+    MODEL --> LOSS["Loss Function (Cross-Entropy and Focal Loss)"]
+    LOSS -->|Backpropagation Gradients| OPTIMIZER["Optimizer (AdamW) and LR Schedule and Regularization"]
+    OPTIMIZER -->|Weight Tensor Update| MODEL
+    MODEL --> VALIDATION["Validation Loop and Metrics Evaluation"]
+    VALIDATION --> ERROR_ANALYSIS["Error and Drift Analysis"]
+    ERROR_ANALYSIS -->|Feedback to Data and Loss Objectives| DATA_COLLECT
+    VALIDATION --> CHECKPOINT["Model Checkpointing"]
+    CHECKPOINT --> HELD_OUT_TEST["Held-Out Test (Executed Once)"]
+    HELD_OUT_TEST --> SERVING["Production Serving and Anomaly Inference"]
+    SERVING --> DRIFT_MONITOR["Online Drift and Incident Monitoring"]
+    DRIFT_MONITOR -->|Autonomous Retrain Trigger| DATA_COLLECT
 ```
-Problem definition ──► Metric & success criteria ◄────────────┐
-        │                                                      │
-        ▼                                                      │
-Data collection ► Cleaning/labeling ► Split (train/val/test)   │
-        │                                  │                   │
-        ▼                                  │                   │
-Preprocessing & augmentation               │                   │
-        │                                  │                   │
-        ▼                                  ▼                   │
-DataLoader ──► Model (embeddings → blocks → head)             │
-                    │                                          │
-                    ▼                                          │
-               Loss function                                   │
-                    │ backprop (gradients)                     │
-                    ▼                                          │
-Optimizer + LR schedule + regularization ──► weight update     │
-                    │                                          │
-                    ▼                                          │
-Validation loop ► Metrics ► Error analysis ───────────────────┘
-                    │        (feeds back into data, loss, architecture)
-                    ▼
-Checkpointing ► Test (once) ► Export/quantize ► Serving ► Monitoring/drift ► retrain
+
+### 4.2 End-to-End Pipeline Diagram (Dark Theme)
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
+flowchart TD
+    D_PROBLEM["Problem Definition and Success Criteria"] --> D_DATA_COLLECT["Data Ingestion and Sanitization"]
+    D_DATA_COLLECT --> D_CAUSAL_SPLIT["Causal Split (Train, Val, Test)"]
+    D_CAUSAL_SPLIT --> D_PREPROCESS["Preprocessing and Z-Score Scaling"]
+    D_PREPROCESS --> D_DATALOADER["Streaming DataLoader"]
+    D_DATALOADER --> D_MODEL["Model (Embeddings, Residual Blocks, Head)"]
+    D_MODEL --> D_LOSS["Loss Function (Cross-Entropy and Focal Loss)"]
+    D_LOSS -->|Backpropagation Gradients| D_OPTIMIZER["Optimizer (AdamW) and LR Schedule and Regularization"]
+    D_OPTIMIZER -->|Weight Tensor Update| D_MODEL
+    D_MODEL --> D_VALIDATION["Validation Loop and Metrics Evaluation"]
+    D_VALIDATION --> D_ERROR_ANALYSIS["Error and Drift Analysis"]
+    D_ERROR_ANALYSIS -->|Feedback to Data and Loss Objectives| D_DATA_COLLECT
+    D_VALIDATION --> D_CHECKPOINT["Model Checkpointing"]
+    D_CHECKPOINT --> D_HELD_OUT_TEST["Held-Out Test (Executed Once)"]
+    D_HELD_OUT_TEST --> D_SERVING["Production Serving and Anomaly Inference"]
+    D_SERVING --> D_DRIFT_MONITOR["Online Drift and Incident Monitoring"]
+    D_DRIFT_MONITOR -->|Autonomous Retrain Trigger| D_DATA_COLLECT
 ```
 
 ### Detailed Component Relationships
 - **Loss defines the gradient signal**, and the **optimizer decides how that signal moves the weights**.
-- **Normalization and initialization keep gradients flowing** so the optimizer can work at all.
-- **Validation results flow back into the data and the loss**. The loop is the real engine, not any single component.
-- **The test set is touched once**. Reusing it turns it into a validation set.
-- **Self-Learning Trigger**: When online monitoring detects statistical drift (Kolmogorov-Smirnov or population stability index shift) or high loss on newly resolved incidents, the system cycles back to the data collection and causal split stage without manual human intervention.
+- **Normalization and initialization keep gradients flowing** so the optimizer can operate stably.
+- **Validation results flow back into the data and the loss**. The loop is the primary engine, not any isolated architecture block.
+- **The test set is touched once**. Reusing it turns it into a validation set and destroys generalization evidence.
+- **Self-Learning Trigger**: When online monitoring detects statistical drift (Kolmogorov-Smirnov or population stability index shift) or high loss on newly resolved incidents, the system cycles back to the data collection and causal split stage without manual intervention.
 
 ---
 
 ## 5. Most Critical Parts, Ranked
 
-1. **Data and Labels** [Certain]: Quantity, label noise, leakage, and distribution match with production.
-2. **Objective and Metric Alignment** [Certain]: The surrogate loss you optimize must monotonically track the business/evaluation metric you are judged on.
-3. **Evaluation Protocol** [Certain]: A held-out split that mirrors real use (temporal, group-based, or cluster-based splits; never random splits when records correlate).
-4. **Optimization Stability** [Likely]: Initialization, normalization, learning rate, and schedule. A wrong learning rate alone can make a good architecture look bad.
-5. **Architecture** [Likely]: Matters least until items 1–4 are solid. Pretrained backbones and standard residual blocks consistently beat custom unverified designs.
+1. **Data and Labels**: Quantity, label noise, leakage, and distribution match with production.
+2. **Objective and Metric Alignment**: The surrogate loss you optimize must monotonically track the business and evaluation metric you are judged on.
+3. **Evaluation Protocol**: A held-out split that mirrors real use (temporal, group-based, or cluster-based splits; never random splits when records correlate).
+4. **Optimization Stability**: Initialization, normalization, learning rate, and schedule. A wrong learning rate alone can make a good architecture fail.
+5. **Architecture**: Matters least until items 1 through 4 are solid. Pretrained backbones and standard residual blocks consistently beat custom unverified designs.
 
 ---
 
-## 6. How to Design & Train One (The 6-Step Process)
+## 6. How to Design and Train One (The 6-Step Process)
 
-1. [Certain] **Define Task & Baseline**: Define input/output tensor shapes and success metric, plus a trivial baseline (majority class, heuristic, linear model, or gradient-boosted trees). If you cannot beat the baseline, the network is not the answer.
-2. [Certain] **Build the Pipeline First**: Build the data pipeline, deduplication, and leak-free split before touching any model code.
-3. [Likely] **Start with Proven Architecture**: Use proven architectures for the modality (e.g. residual MLP for tabular telemetry vectors, Transformer for token sequences).
-4. [Certain] **Overfit a Tiny Batch**: Overfit a tiny batch (10–100 samples) to near-zero loss ($\le 0.08$). If it cannot, you have a structural bug (dead activations, broken autograd, target mismatch), not a tuning problem.
-5. [Likely] **Scale Up & Tune Systematically**: Tune strictly in this order:
-   $$\text{Learning Rate} \longrightarrow \text{Batch Size} \longrightarrow \text{Regularization} \longrightarrow \text{Width \& Depth}$$
-6. [Certain] **Run Error Analysis**: Analyze failure modes and false positives, feeding edge-case telemetry back into the training distribution.
+1. **Define Task and Baseline**: Define input and output tensor shapes and success metric, plus a trivial baseline (majority class, heuristic, linear model, or gradient-boosted trees). If you cannot beat the baseline, the neural network is not the answer.
+2. **Build the Pipeline First**: Build the data pipeline, deduplication, and leak-free split before touching any model code.
+3. **Start with Proven Architecture**: Use proven architectures for the modality (residual MLP for tabular telemetry vectors, Transformer for token sequences).
+4. **Overfit a Tiny Batch**: Overfit a tiny batch (10 to 100 samples) to near-zero loss ($\le 0.08$). If it cannot, you have a structural bug (dead activations, broken autograd, target mismatch), not a tuning problem.
+5. **Scale Up and Tune Systematically**: Tune strictly in this order:
+   $$\text{Learning Rate} \longrightarrow \text{Batch Size} \longrightarrow \text{Regularization} \longrightarrow \text{Width and Depth}$$
+6. **Run Error Analysis**: Analyze failure modes and false positives, feeding edge-case telemetry back into the training distribution.
 
 ---
 
 ## 7. Critical Algorithms Implemented in the Engine
 
 ### 7.1 Learning Core
-- **Forward Pass & Backpropagation**: Reverse-mode automatic differentiation applying the chain rule through PyTorch tensors.
+- **Forward Pass and Backpropagation**: Reverse-mode automatic differentiation applying the chain rule through PyTorch tensors.
 - **Optimization Strategy**: AdamW with decoupled weight decay ($\lambda = 10^{-4}$). Supports SGD with momentum and RMSprop.
 - **Learning Rate Schedules**: Linear warmup followed by cosine decay.
 - **Gradient Safeguards**: Mixed precision execution and gradient norm clipping ($\|g\|_2 \le 1.0$) to eliminate gradient explosion during telemetry spikes.
 
 ### 7.2 Optimization Stability
-- **Weight Initialization**: Kaiming (He) uniform initialization for ReLU/GELU layers:
+- **Weight Initialization**: Kaiming (He) uniform initialization for ReLU and GELU layers:
   $$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \sqrt{\frac{6}{\text{fan\_in}}}\right), \quad \mathbf{b} = \mathbf{0}$$
 - **Normalization**: Pre-activation Layer Normalization (`LayerNorm`) across hidden feature dimensions:
   $$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mathrm{E}[\mathbf{x}]}{\sqrt{\mathrm{Var}[\mathbf{x}] + \epsilon}} \odot \boldsymbol{\gamma} + \boldsymbol{\beta}$$
@@ -416,12 +439,12 @@ Checkpointing ► Test (once) ► Export/quantize ► Serving ► Monitoring/dri
   $$\text{GELU}(x) = x \cdot \Phi(x) = x \cdot \frac{1}{2}\left[1 + \text{erf}\left(\frac{x}{\sqrt{2}}\right)\right]$$
 - **Loss Objectives**: Numerically stabilized multi-class Cross-Entropy and Focal Loss for imbalanced distributed anomaly detection.
 
-### 7.4 Regularization & Generalization
+### 7.4 Regularization and Generalization
 - Decoupled weight decay ($10^{-4}$), feature dropout ($p = 0.1$), and early stopping based on validation split loss plateau.
 
 ---
 
-## 8. How We Configure It & How It Learns Itself
+## 8. How We Configure It and How It Learns Itself
 
 ### 8.1 Configuration Architecture (`config/`)
 Configuration is strictly declarative and isolated in the `config/` directory:
@@ -432,7 +455,7 @@ Configuration is strictly declarative and isolated in the `config/` directory:
 ### 8.2 Autonomous Self-Learning Mechanism
 The system learns continuously through an automated closed-loop feedback engine:
 1. **Online Prediction Logging**: Every live inference emits an OpenTelemetry span and logs prediction probabilities alongside input features into the operational ledger.
-2. **Discrepancy & Drift Detection**:
+2. **Discrepancy and Drift Detection**:
    - A background evaluation job monitors prediction divergence against verified post-incident root-cause labels.
    - Monitors feature distribution shift (drift) using rolling population stability index (PSI) metrics.
 3. **Automated Feedback Trigger**:
@@ -445,12 +468,12 @@ The system learns continuously through an automated closed-loop feedback engine:
 
 ---
 
-## 9. Entity State Machine: Telemetry & Network Spec Lifecycles
+## 9. Entity State Machine: Telemetry and Network Spec Lifecycles
 
 ```mermaid
 stateDiagram-v2
     state "system_telemetry_pipeline Lifecycle" as Pipeline {
-        [*] --> SPECIFIED: Task Spec & Records Ingested
+        [*] --> SPECIFIED: Task Spec and Records Ingested
         SPECIFIED --> SPLIT_VALIDATED: Execute Leak-Free Trace/Time Split
         SPLIT_VALIDATED --> BASELINE_ESTABLISHED: Trivial Baseline Benchmarked
         BASELINE_ESTABLISHED --> [*]
@@ -470,7 +493,7 @@ stateDiagram-v2
 
 ---
 
-## 10. Entity Relationship & Persistence Schema (ERD)
+## 10. Entity Relationship and Persistence Schema (ERD)
 
 ```mermaid
 erDiagram
@@ -548,7 +571,7 @@ erDiagram
 
 ---
 
-## 12. Database Tables & Migration Specifications
+## 12. Database Tables and Migration Specifications
 
 ### 12.1 SQL Migration (`database/migrations/0001_init.sql`)
 ```sql
@@ -594,7 +617,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 
 ---
 
-## 13. API Contracts & Envelope JSON Specifications
+## 13. API Contracts and Envelope JSON Specifications
 
 ### 13.1 Pipeline Ingress: `POST /v1/telemetry-pipeline`
 **Request Payload**:
@@ -738,7 +761,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 
 ---
 
-## 14. Consequences & Trade-Offs
+## 14. Consequences and Trade-Offs
 
 ### Positive
 - **Guaranteed Zero Leakage**: Eliminates synthetic test accuracy inflation caused by trace correlation or lookahead bias.
