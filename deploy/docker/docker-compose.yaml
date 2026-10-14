@@ -1,0 +1,21 @@
+services:
+  neural-network-design:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: neural-network-design
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=development
+      - PORT=8080
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://llmobs-otel-collector:4317}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@llmobs-alloydb:5432/neural_network_design}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-llmobs-kafka:9092}
+    restart: unless-stopped
+    networks:
+      - llmobs-network
+
+networks:
+  llmobs-network:
+    external: true

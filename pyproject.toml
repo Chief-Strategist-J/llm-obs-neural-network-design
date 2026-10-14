@@ -5,6 +5,7 @@ description = "Neural Network Design service and architecture for LLM Observabil
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "python-shared",
     "pyyaml>=6.0",
 ]
 
@@ -17,8 +18,15 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "../python-shared/src"]
 testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pyright]
+extraPaths = [".", "../python-shared/src"]
