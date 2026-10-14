@@ -283,8 +283,52 @@ flowchart TD
 - **Gradient Safeguards**: Mixed precision execution and gradient norm clipping ($\|g\|_2 \le 1.0$) to eliminate gradient explosion during telemetry spikes.
 
 ### 7.2 Optimization Stability
-- **Weight Initialization**: Kaiming (He) uniform initialization for ReLU and GELU layers:
-  $$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \sqrt{\frac{6}{\text{fan\_in}}}\right), \quad \mathbf{b} = \mathbf{0}$$
+
+#### 7.2.1 Weight Initialization: Kaiming (He) Uniform Initialization for ReLU and GELU Layers
+
+##### 1. Non-Technical Definition
+Imagine speaking into a megaphone connected to a chain of one hundred other megaphones. If each megaphone increases the volume even slightly, by the tenth megaphone the sound becomes deafening static (exploding signal). If each megaphone decreases the volume slightly, by the tenth megaphone the voice dies out into total silence (vanishing signal). Weight initialization is the precise calibration dial applied to every neuron before training begins so that signals travel through dozens of layers without becoming silent or deafening.
+
+##### 2. Technical Definition
+Kaiming (He) initialization is a variance-preserving weight initialization technique tailored for non-linear, rectified activation functions (such as ReLU and GELU). Because rectified activations zero out approximately half of their inputs, standard Xavier/Glorot initialization suffers from progressive signal variance decay across layers. Kaiming initialization compensates by scaling the initial weight variance by a factor of two:
+$$\text{Var}(\mathbf{W}) = \frac{2}{\text{fan\_in}}$$
+For a uniform distribution $\mathcal{U}(-b, b)$, setting the variance $\frac{b^2}{3} = \frac{2}{\text{fan\_in}}$ yields the uniform boundary:
+$$b = \sqrt{\frac{6}{\text{fan\_in}}}$$
+Weights are sampled from:
+$$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \sqrt{\frac{6}{\text{fan\_in}}}\right), \quad \mathbf{b} = \mathbf{0}$$
+
+##### 3. How It Internally Works
+1. **Fan-In Calculation**: For any linear layer with input dimension $D_{\text{in}}$ and output dimension $D_{\text{out}}$, fan-in equals $D_{\text{in}}$. For convolutional layers with kernel dimensions $(C_{\text{in}}, K_h, K_w)$, fan-in equals $C_{\text{in}} \times K_h \times K_w$.
+2. **Bound Computation**: The upper and lower uniform distribution limit is calculated using the square root of the ratio $\frac{6}{\text{fan\_in}}$.
+3. **Tensor Sampling**: Every weight parameter in the tensor is initialized independently from the uniform interval $[-b, b]$.
+4. **Bias Zeroing**: Bias vectors are deterministically set to zero to avoid introducing initial directional asymmetry.
+5. **Autograd Safety**: The initialization executes under an autograd-detached context so initial weight sampling generates no gradient graph overhead.
+
+##### 4. Pseudocode Implementation
+```python
+def initialize_kaiming_uniform(weight_tensor: Tensor, bias_tensor: Tensor | None = None) -> None:
+    # Step 1: Calculate fan-in from tensor shape dimensions
+    shape = weight_tensor.shape
+    if len(shape) == 2:
+        fan_in = shape[1]
+    elif len(shape) > 2:
+        receptive_field_size = 1
+        for dim in shape[2:]:
+            receptive_field_size *= dim
+        fan_in = shape[1] * receptive_field_size
+    else:
+        fan_in = shape[0]
+
+    # Step 2: Calculate uniform distribution boundary
+    bound = math.sqrt(6.0 / max(1, fan_in))
+
+    # Step 3: Sample weights uniformly and zero biases without gradient tracking
+    with torch.no_grad():
+        weight_tensor.uniform_(-bound, bound)
+        if bias_tensor is not None:
+            bias_tensor.zero_()
+```
+
 - **Normalization**: Pre-activation Layer Normalization (`LayerNorm`) across hidden feature dimensions:
   $$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mathrm{E}[\mathbf{x}]}{\sqrt{\mathrm{Var}[\mathbf{x}] + \epsilon}} \odot \boldsymbol{\gamma} + \boldsymbol{\beta}$$
 - **Residual Highway**: Identity skip connections guaranteeing unobstructed gradient flow:
