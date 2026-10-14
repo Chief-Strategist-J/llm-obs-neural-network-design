@@ -1,0 +1,9 @@
+feature_name: system_telemetry_pipeline
+bounded_context: neural_network_design
+description: Distributed systems telemetry data pipeline, leak-free split validation, and trivial baseline benchmarks.
+ports:
+  - repository.telemetry_pipeline_repository_port
+invariants:
+  - train and validation groups must be strictly disjoint
+  - temporal splits must never violate chronological causality
+  - baseline evaluation must complete before network training
