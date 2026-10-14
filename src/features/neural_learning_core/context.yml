@@ -1,0 +1,8 @@
+feature_name: neural_learning_core
+bounded_context: neural_network_design
+description: PyTorch tensor execution engine, residual MLP architecture, and tiny-batch overfitting validation.
+ports:
+  - repository.neural_training_repository_port
+invariants:
+  - tiny-batch overfit must achieve loss below threshold before scaling
+  - layer normalization and gradient clipping must remain active
