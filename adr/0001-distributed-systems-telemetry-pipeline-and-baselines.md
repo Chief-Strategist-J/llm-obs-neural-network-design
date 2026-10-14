@@ -388,15 +388,15 @@ Imagine speaking into a megaphone connected to a chain of one hundred other mega
 
 ##### 2. Technical Definition
 Kaiming (He) initialization is a variance-preserving weight initialization technique tailored for non-linear, rectified activation functions (such as ReLU and GELU). Because rectified activations zero out approximately half of their inputs, standard Xavier/Glorot initialization suffers from progressive signal variance decay across layers. Kaiming initialization compensates by scaling the initial weight variance by a factor of two:
-$$\text{Var}(\mathbf{W}) = \frac{2}{\text{fan\_in}}$$
-For a uniform distribution $\mathcal{U}(-b, b)$, setting the variance $\frac{b^2}{3} = \frac{2}{\text{fan\_in}}$ yields the uniform boundary:
-$$b = \sqrt{\frac{6}{\text{fan\_in}}}$$
+$$\text{Var}(\mathbf{W}) = \frac{2}{d_{\text{in}}}$$
+For a uniform distribution $\mathcal{U}(-b, b)$, setting the variance $\frac{b^2}{3} = \frac{2}{d_{\text{in}}}$ yields the uniform boundary:
+$$b = \sqrt{\frac{6}{d_{\text{in}}}}$$
 Weights are sampled from:
-$$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \sqrt{\frac{6}{\text{fan\_in}}}\right), \quad \mathbf{b} = \mathbf{0}$$
+$$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{d_{\text{in}}}}, \sqrt{\frac{6}{d_{\text{in}}}}\right), \quad \mathbf{b} = \mathbf{0}$$
 
 ##### 3. How It Internally Works
-1. **Fan-In Calculation**: For any linear layer with input dimension $D_{\text{in}}$ and output dimension $D_{\text{out}}$, fan-in equals $D_{\text{in}}$. For convolutional layers with kernel dimensions $(C_{\text{in}}, K_h, K_w)$, fan-in equals $C_{\text{in}} \times K_h \times K_w$.
-2. **Bound Computation**: The upper and lower uniform distribution limit is calculated using the square root of the ratio $\frac{6}{\text{fan\_in}}$.
+1. **Fan-In Calculation**: For any linear layer with input dimension $D_{\text{in}}$ and output dimension $D_{\text{out}}$, input dimension $d_{\text{in}}$ equals $D_{\text{in}}$. For convolutional layers with kernel dimensions $(C_{\text{in}}, K_h, K_w)$, $d_{\text{in}}$ equals $C_{\text{in}} \times K_h \times K_w$.
+2. **Bound Computation**: The upper and lower uniform distribution limit is calculated using the square root of the ratio $\frac{6}{d_{\text{in}}}$.
 3. **Tensor Sampling**: Every weight parameter in the tensor is initialized independently from the uniform interval $[-b, b]$.
 4. **Bias Zeroing**: Bias vectors are deterministically set to zero to avoid introducing initial directional asymmetry.
 5. **Autograd Safety**: The initialization executes under an autograd-detached context so initial weight sampling generates no gradient graph overhead.
