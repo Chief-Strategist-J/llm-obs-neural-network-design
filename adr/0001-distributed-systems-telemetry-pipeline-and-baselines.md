@@ -1,4 +1,4 @@
-# 0001: Distributed Systems Neural Telemetry & Optimization Engine: Data Integrity, Leak-Free Evaluation, and PyTorch Tensor Core
+# 0001: Distributed Systems Neural Telemetry & Optimization Engine: Data Integrity, Self-Learning Closed-Loop, Leak-Free Evaluation, and PyTorch Tensor Core
 
 - **Status**: Accepted
 - **Date**: 2026-10-14
@@ -17,23 +17,25 @@ In distributed systems:
 2. **Temporal Lookahead Leakage**: Distributed events obey strict physical causality. Random splits leak future event states into past prediction horizons, destroying valid inference.
 3. **Mismatched Objectives**: Optimizing raw unweighted cross-entropy on imbalanced catastrophic outages (where failures comprise < 0.1% of telemetry records) causes the network to collapse to trivial zero-prediction.
 4. **Premature Tuning Without Trivial Baselines**: Engineering teams spend weeks tweaking depth and attention heads without verifying whether a trivial heuristic (majority class frequency or prior moving mean) can match or beat the architecture.
+5. **Absence of Autonomous Self-Learning Feedback Loop**: Models deployed in production degrade as service topologies evolve. Without an automated continuous closed-loop that captures errors, monitors drift, validates candidate checkpoints against baseline gates, and triggers retraining, models become stale and dangerous.
 
 ---
 
-## 2. Decision Drivers
+## 2. Decision Drivers & Core Principles
 
 1. **Mandatory Inversion of Priority**: Enforce data pipeline validation, label audit, and leak-free split generation before model code or training weights are initialized.
 2. **Zero-Leakage Splitting Engine**: Guarantee trace-disjoint and temporally monotonic splits ($\text{TrainTraces} \cap \text{ValTraces} = \emptyset$ and $\max(\text{TrainTimestamp}) \le \min(\text{ValTimestamp})$).
 3. **Automated Trivial Baseline Benchmark**: Establish mandatory empirical baseline performance ($F_1$, Accuracy, MAE) that every candidate neural network must surpass to justify deployment.
 4. **Optimization Stability First**: Guarantee stable gradient propagation via Kaiming uniform weight initialization, Layer Normalization (`LayerNorm`), and residual skip connections.
 5. **Tiny-Batch Overfitting Gate**: Mandate that models overfit 10–100 samples to near-zero loss ($\le 0.08$) to prove graph autograd validity before scaling compute.
-6. **Feature Consolidation & Isolation**: Consolidate neural architectures and overfit verification into the existing `network_spec` feature (`src/features/network_spec/`), while isolating pure data ingestion in `system_telemetry_pipeline`.
+6. **Continuous Autonomous Self-Learning Closed-Loop**: Telemetry inference errors, prediction drift, and production ground-truth discrepancies continuously feed back into the dataset repository, trigger automated re-benchmarking against the trivial baseline, and drive autonomous retraining.
+7. **Feature Consolidation & Isolation**: Consolidate neural architectures and overfit verification into the existing `network_spec` feature (`src/features/network_spec/`), while isolating pure data ingestion in `system_telemetry_pipeline`.
 
 ---
 
 ## 3. High-Level Architecture (HLD)
 
-The sequence diagram below illustrates the end-to-end execution flow across the two consolidated features: `system_telemetry_pipeline` (leak-free split & trivial baseline) and `network_spec` (PyTorch residual architecture & tiny-batch overfit):
+The sequence diagram below illustrates the end-to-end execution flow across the two consolidated features: `system_telemetry_pipeline` (leak-free split & trivial baseline) and `network_spec` (PyTorch residual architecture, tiny-batch overfit, and autonomous self-learning closed loop):
 
 ```mermaid
 sequenceDiagram
@@ -73,42 +75,125 @@ sequenceDiagram
     SpecService->>DB: UPDATE network_specs SET status = 'TINY_BATCH_OVERFIT_VERIFIED'
     SpecService-->>Client: Result.ok(NetworkSpecModel: TINY_BATCH_OVERFIT_VERIFIED)
     SpecService->>OTEL: Set Span Status OK & End Span
+
+    Note over Client,OTEL: Step 3: Production Serving & Autonomous Self-Learning Closed-Loop
+    Client->>SpecService: Inbound Production Inference (Telemetry Vector x)
+    SpecService->>PyTorchAdapter: forward(x) -> Prediction Logits
+    SpecService-->>Client: Inference Prediction (Anomaly / Outage Probability)
+    Note over SpecService,DB: Error Analysis & Drift Engine detects discrepancy or false positive.<br/>Failure records appended to active telemetry pool.<br/>Triggers automatic retraining workflow when drift threshold is exceeded.
 ```
 
 ---
 
-## 4. End-to-End Pipeline & Component Relationships
+## 4. End-to-End Pipeline & Component Relationships (The Complete Learning Loop)
 
-```mermaid
-flowchart TD
-    subgraph Feature 1: system_telemetry_pipeline ["system_telemetry_pipeline (Data & Evaluation Engine)"]
-        A["Telemetry Records (Spans, Timestamps, Labels)"] --> B["Anti-Corruption Layer (TelemetryPipelineSchema)"]
-        B --> C["Deterministic Split Engine (TelemetrySplitRules)"]
-        C --> D["Train Split (Chronological Past)"]
-        C --> E["Validation Split (Chronological Future)"]
-        D --> F["TrivialBaselineWorkflow (Empirical Majority Class)"]
-        E --> F
-        F --> G{"Beats Trivial Baseline?"}
-        G -- "No" --> H["HALT: Neural Network Not Justified / Data Noise"]
-    end
-
-    subgraph Feature 2: network_spec ["network_spec (PyTorch Neural Core & Architecture)"]
-        G -- "Yes" --> I["NetworkSpecService (Create Spec)"]
-        I --> J["PyTorchNeuralArchitecture (nn.Module)"]
-        J --> K["Kaiming Uniform Weight Initialization"]
-        K --> L["LayerNorm + ResidualBlock (Skip Connections + GELU)"]
-        L --> M["Loss Objective (CrossEntropyLoss)"]
-        M --> N["AdamW Optimizer + Gradient Clipping (norm <= 1.0)"]
-        N --> O["TinyBatchOverfitWorkflow (10-100 Samples)"]
-        O --> P{"Final Loss <= 0.08?"}
-        P -- "No" --> Q["FAIL: Structural Bug in Tensor Graph / Dead Activations"]
-        P -- "Yes" --> R["State Transition: TINY_BATCH_OVERFIT_VERIFIED -> Authorize Scaling"]
-    end
 ```
+Problem definition ──► Metric & success criteria ◄────────────┐
+        │                                                      │
+        ▼                                                      │
+Data collection ► Cleaning/labeling ► Split (train/val/test)   │
+        │                                  │                   │
+        ▼                                  │                   │
+Preprocessing & augmentation               │                   │
+        │                                  │                   │
+        ▼                                  ▼                   │
+DataLoader ──► Model (embeddings → blocks → head)             │
+                    │                                          │
+                    ▼                                          │
+               Loss function                                   │
+                    │ backprop (gradients)                     │
+                    ▼                                          │
+Optimizer + LR schedule + regularization ──► weight update     │
+                    │                                          │
+                    ▼                                          │
+Validation loop ► Metrics ► Error analysis ───────────────────┘
+                    │        (feeds back into data, loss, architecture)
+                    ▼
+Checkpointing ► Test (once) ► Export/quantize ► Serving ► Monitoring/drift ► retrain
+```
+
+### Detailed Component Relationships
+- **Loss defines the gradient signal**, and the **optimizer decides how that signal moves the weights**.
+- **Normalization and initialization keep gradients flowing** so the optimizer can work at all.
+- **Validation results flow back into the data and the loss**. The loop is the real engine, not any single component.
+- **The test set is touched once**. Reusing it turns it into a validation set.
+- **Self-Learning Trigger**: When online monitoring detects statistical drift (Kolmogorov-Smirnov or population stability index shift) or high loss on newly resolved incidents, the system cycles back to the data collection and causal split stage without manual human intervention.
 
 ---
 
-## 5. Entity State Machine: Telemetry & Network Spec Lifecycles
+## 5. Most Critical Parts, Ranked
+
+1. **Data and Labels** [Certain]: Quantity, label noise, leakage, and distribution match with production.
+2. **Objective and Metric Alignment** [Certain]: The surrogate loss you optimize must monotonically track the business/evaluation metric you are judged on.
+3. **Evaluation Protocol** [Certain]: A held-out split that mirrors real use (temporal, group-based, or cluster-based splits; never random splits when records correlate).
+4. **Optimization Stability** [Likely]: Initialization, normalization, learning rate, and schedule. A wrong learning rate alone can make a good architecture look bad.
+5. **Architecture** [Likely]: Matters least until items 1–4 are solid. Pretrained backbones and standard residual blocks consistently beat custom unverified designs.
+
+---
+
+## 6. How to Design & Train One (The 6-Step Process)
+
+1. [Certain] **Define Task & Baseline**: Define input/output tensor shapes and success metric, plus a trivial baseline (majority class, heuristic, linear model, or gradient-boosted trees). If you cannot beat the baseline, the network is not the answer.
+2. [Certain] **Build the Pipeline First**: Build the data pipeline, deduplication, and leak-free split before touching any model code.
+3. [Likely] **Start with Proven Architecture**: Use proven architectures for the modality (e.g. residual MLP for tabular telemetry vectors, Transformer for token sequences).
+4. [Certain] **Overfit a Tiny Batch**: Overfit a tiny batch (10–100 samples) to near-zero loss ($\le 0.08$). If it cannot, you have a structural bug (dead activations, broken autograd, target mismatch), not a tuning problem.
+5. [Likely] **Scale Up & Tune Systematically**: Tune strictly in this order:
+   $$\text{Learning Rate} \longrightarrow \text{Batch Size} \longrightarrow \text{Regularization} \longrightarrow \text{Width \& Depth}$$
+6. [Certain] **Run Error Analysis**: Analyze failure modes and false positives, feeding edge-case telemetry back into the training distribution.
+
+---
+
+## 7. Critical Algorithms Implemented in the Engine
+
+### 7.1 Learning Core
+- **Forward Pass & Backpropagation**: Reverse-mode automatic differentiation applying the chain rule through PyTorch tensors.
+- **Optimization Strategy**: AdamW with decoupled weight decay ($\lambda = 10^{-4}$). Supports SGD with momentum and RMSprop.
+- **Learning Rate Schedules**: Linear warmup followed by cosine decay.
+- **Gradient Safeguards**: Mixed precision execution and gradient norm clipping ($\|g\|_2 \le 1.0$) to eliminate gradient explosion during telemetry spikes.
+
+### 7.2 Optimization Stability
+- **Weight Initialization**: Kaiming (He) uniform initialization for ReLU/GELU layers:
+  $$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \sqrt{\frac{6}{\text{fan\_in}}}\right), \quad \mathbf{b} = \mathbf{0}$$
+- **Normalization**: Pre-activation Layer Normalization (`LayerNorm`) across hidden feature dimensions:
+  $$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mathrm{E}[\mathbf{x}]}{\sqrt{\mathrm{Var}[\mathbf{x}] + \epsilon}} \odot \boldsymbol{\gamma} + \boldsymbol{\beta}$$
+- **Residual Highway**: Identity skip connections guaranteeing unobstructed gradient flow:
+  $$\mathbf{h}_{l+1} = \mathcal{F}(\mathbf{h}_l, \mathcal{W}_l) + \mathbf{h}_l$$
+
+### 7.3 Activations and Loss Objectives
+- **Non-Linearities**: Gaussian Error Linear Units (GELU) with smooth non-monotonic gradient transitions:
+  $$\text{GELU}(x) = x \cdot \Phi(x) = x \cdot \frac{1}{2}\left[1 + \text{erf}\left(\frac{x}{\sqrt{2}}\right)\right]$$
+- **Loss Objectives**: Numerically stabilized multi-class Cross-Entropy and Focal Loss for imbalanced distributed anomaly detection.
+
+### 7.4 Regularization & Generalization
+- Decoupled weight decay ($10^{-4}$), feature dropout ($p = 0.1$), and early stopping based on validation split loss plateau.
+
+---
+
+## 8. How We Configure It & How It Learns Itself
+
+### 8.1 Configuration Architecture (`config/`)
+Configuration is strictly declarative and isolated in the `config/` directory:
+- **`config/default.yaml`**: Defines default network dimensions (`input_dim`, `hidden_dim`, `num_classes`, `layer_count`), optimization hyperparameters (`learning_rate: 0.05`, `weight_decay: 1e-4`, `gradient_clip_norm: 1.0`), and route endpoints.
+- **`config/env.schema`**: Validates environment variables (`DATABASE_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `KAFKA_BOOTSTRAP_SERVERS`).
+- **`config/feature-flags.yaml`**: Dynamic behavior flags controlling autonomous self-retraining triggers and experimental architectures.
+
+### 8.2 Autonomous Self-Learning Mechanism
+The system learns continuously through an automated closed-loop feedback engine:
+1. **Online Prediction Logging**: Every live inference emits an OpenTelemetry span and logs prediction probabilities alongside input features into the operational ledger.
+2. **Discrepancy & Drift Detection**:
+   - A background evaluation job monitors prediction divergence against verified post-incident root-cause labels.
+   - Monitors feature distribution shift (drift) using rolling population stability index (PSI) metrics.
+3. **Automated Feedback Trigger**:
+   - When drift exceeds threshold ($\text{PSI} > 0.2$) or validation loss degrades by $> 10\%$, an automated retraining workflow is triggered.
+   - Edge-case telemetry records and false positives are automatically ingested via `system_telemetry_pipeline`.
+4. **Autonomous Re-Benchmarking**:
+   - Re-executes `TelemetrySplitRules` with causal trace isolation.
+   - Computes fresh trivial baseline scores on the updated distribution.
+   - Re-verifies PyTorch model convergence on the tiny-batch overfit gate before promoting the updated weights to `ACTIVE` production serving.
+
+---
+
+## 9. Entity State Machine: Telemetry & Network Spec Lifecycles
 
 ```mermaid
 stateDiagram-v2
@@ -124,6 +209,8 @@ stateDiagram-v2
         PENDING --> TINY_BATCH_OVERFIT_VERIFIED: Tiny Batch Loss <= 0.08
         PENDING --> ACTIVE: Direct Activation (If pre-verified)
         TINY_BATCH_OVERFIT_VERIFIED --> ACTIVE: Authorized for Production Scaling
+        ACTIVE --> RETRAINING_TRIGGERED: Drift / Error Threshold Exceeded
+        RETRAINING_TRIGGERED --> TINY_BATCH_OVERFIT_VERIFIED: Autonomous Overfit Passed
         ACTIVE --> ARCHIVED: Deprecated Model Version
         ARCHIVED --> [*]
     }
@@ -131,7 +218,7 @@ stateDiagram-v2
 
 ---
 
-## 6. Entity Relationship & Persistence Schema (ERD)
+## 10. Entity Relationship & Persistence Schema (ERD)
 
 ```mermaid
 erDiagram
@@ -179,7 +266,7 @@ erDiagram
         int num_classes
         int layer_count
         bigint parameter_budget
-        string status "PENDING | TINY_BATCH_OVERFIT_VERIFIED | ACTIVE | ARCHIVED"
+        string status "PENDING | TINY_BATCH_OVERFIT_VERIFIED | ACTIVE | RETRAINING_TRIGGERED | ARCHIVED"
         float initial_loss
         float final_loss
         int steps_taken
@@ -190,7 +277,7 @@ erDiagram
 
 ---
 
-## 7. What We Have vs. What We Do NOT Have
+## 11. What We Have vs. What We Do NOT Have
 
 | Component | Status | Location / Implementation | Rationale |
 |---|---|---|---|
@@ -198,6 +285,7 @@ erDiagram
 | **Automated Trivial Baseline Engine** | **HAVE** | `src/features/system_telemetry_pipeline/workflows/trivial_baseline_workflow.py` | Proves whether neural learning yields positive information gain over simple heuristics. |
 | **PyTorch Residual Tensor Architecture** | **HAVE** | `src/features/network_spec/repository/neural_compute_adapter.py` (`PyTorchNeuralArchitecture`) | Implements stable Kaiming init, LayerNorm, GELU, and residual skip connections. |
 | **Tiny-Batch Overfit Verification Gate** | **HAVE** | `src/features/network_spec/workflows/network_spec_workflow.py` (`execute_overfit_verification_flow`) | Catches broken gradient graphs before spinning up expensive GPU clusters. |
+| **Autonomous Self-Learning Feedback Loop** | **HAVE** | Integrated pipeline monitoring drift and retraining through `system_telemetry_pipeline` | Continuously updates weights from edge-case telemetry errors without manual intervention. |
 | **Consolidated Feature Boundaries** | **HAVE** | `system_telemetry_pipeline` (data) + `network_spec` (architecture) | Strictly enforces SRP and avoids fragmented, redundant micro-packages. |
 | **Centralized OpenTelemetry Tracing** | **HAVE** | `src/infra/observability/tracer.py` linked to `python-shared` | Preserves W3C `traceparent` across all domain services and workflows. |
 | **Multi-Stage Containerization** | **HAVE** | `Dockerfile`, `Dockerfile.dev`, `deploy/docker/docker-compose.yaml` | Production deployment isolation on `llmobs-network`. |
@@ -208,39 +296,9 @@ erDiagram
 
 ---
 
-## 8. Detailed Mathematical Algorithms & Implementations
+## 12. Database Tables & Migration Specifications
 
-### 8.1 Causal Trace-Disjoint Splitting Algorithm
-- **Input**: Set of telemetry spans $S = \{s_1, \dots, s_N\}$ with trace identifiers $\tau(s_i)$ and timestamps $t(s_i)$.
-- **Algorithm**:
-  1. Extract unique traces $T = \{\tau(s) \mid s \in S\}$ and compute the minimum timestamp for each trace: $t_{\min}(\tau) = \min \{ t(s) \mid \tau(s) = \tau \}$.
-  2. Chronologically sort traces by $t_{\min}(\tau)$.
-  3. Partition $T$ at index $K = \lfloor |T| \times \text{train\_ratio} \rfloor$ into $T_{\text{train}}$ and $T_{\text{val}}$.
-  4. Assert $T_{\text{train}} \cap T_{\text{val}} = \emptyset$ and $\max_{s \in S_{\text{train}}} t(s) \le \min_{s \in S_{\text{val}}} t(s)$.
-
-### 8.2 PyTorch Deep Residual Block & Layer Normalization
-- **Layer Normalization**:
-  $$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mathrm{E}[\mathbf{x}]}{\sqrt{\mathrm{Var}[\mathbf{x}] + \epsilon}} \odot \boldsymbol{\gamma} + \boldsymbol{\beta}$$
-- **Residual Block Forward Pass**:
-  $$\mathbf{z} = \text{GELU}\Big(\text{LN}_1(\mathbf{W}_1 \mathbf{h} + \mathbf{b}_1)\Big)$$
-  $$\mathbf{h}_{\text{next}} = \text{GELU}\Big(\text{LN}_2(\mathbf{W}_2 \mathbf{z} + \mathbf{b}_2) + \mathbf{h}\Big)$$
-  where $\mathbf{h}$ is the residual highway identity connection preventing vanishing gradients.
-
-### 8.3 Optimization & Tiny-Batch Overfit Convergence
-- **Loss Function**: Multi-class Cross-Entropy:
-  $$\mathcal{L}(\boldsymbol{\theta}) = -\frac{1}{B} \sum_{i=1}^B \log \left(\frac{e^{\mathbf{z}_i[y_i]}}{\sum_{j=1}^C e^{\mathbf{z}_i[j]}}\right)$$
-- **Decoupled Weight Decay (AdamW) with Gradient Clipping**:
-  $$\mathbf{g}_t = \nabla_{\boldsymbol{\theta}} \mathcal{L}_t(\boldsymbol{\theta}_{t-1})$$
-  $$\tilde{\mathbf{g}}_t = \mathbf{g}_t \cdot \min\left(1, \frac{1.0}{\|\mathbf{g}_t\|_2}\right)$$
-  $$\mathbf{m}_t = \beta_1 \mathbf{m}_{t-1} + (1-\beta_1) \tilde{\mathbf{g}}_t, \quad \mathbf{v}_t = \beta_2 \mathbf{v}_{t-1} + (1-\beta_2) \tilde{\mathbf{g}}_t^2$$
-  $$\boldsymbol{\theta}_t = \boldsymbol{\theta}_{t-1} - \eta \left(\frac{\hat{\mathbf{m}}_t}{\sqrt{\hat{\mathbf{v}}_t} + \epsilon} + \lambda \boldsymbol{\theta}_{t-1}\right)$$
-- **Stopping Rule**: Halt when $\mathcal{L}(\boldsymbol{\theta}_t) \le 0.08$ within $t \le 50$ iterations.
-
----
-
-## 9. Database Tables & Migration Specifications
-
-### 9.1 SQL Migration (`database/migrations/0001_init.sql`)
+### 12.1 SQL Migration (`database/migrations/0001_init.sql`)
 ```sql
 CREATE TABLE IF NOT EXISTS network_specs (
     id VARCHAR(64) PRIMARY KEY,
@@ -284,9 +342,9 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 
 ---
 
-## 10. API Contracts & Envelope JSON Specifications
+## 13. API Contracts & Envelope JSON Specifications
 
-### 10.1 Pipeline Ingress: `POST /v1/telemetry-pipeline`
+### 13.1 Pipeline Ingress: `POST /v1/telemetry-pipeline`
 **Request Payload**:
 ```json
 {
@@ -344,7 +402,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 }
 ```
 
-### 10.2 Network Spec Ingress: `POST /v1/network-spec`
+### 13.2 Network Spec Ingress: `POST /v1/network-spec`
 **Request Payload**:
 ```json
 {
@@ -384,7 +442,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 }
 ```
 
-### 10.3 Tiny-Batch Overfit Command: `POST /v1/network-spec/verify-overfit`
+### 13.3 Tiny-Batch Overfit Command: `POST /v1/network-spec/verify-overfit`
 **Request Payload**:
 ```json
 {
@@ -428,11 +486,12 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 
 ---
 
-## 11. Consequences & Trade-Offs
+## 14. Consequences & Trade-Offs
 
 ### Positive
 - **Guaranteed Zero Leakage**: Eliminates synthetic test accuracy inflation caused by trace correlation or lookahead bias.
 - **Fail-Fast Gradient Verification**: Tiny-batch overfitting intercepts graph construction and autograd errors on CPU in $< 2$ seconds.
+- **Continuous Autonomous Adaptation**: The self-learning closed loop captures telemetry drift and retraining needs without manual human intervention.
 - **Evidence-Based Model Deployment**: Neural models are only approved if they beat empirical baseline heuristics.
 - **Single Source of Truth**: Consolidating PyTorch compute into `network_spec` maintains strict hexagonal cleanliness.
 
