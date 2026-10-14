@@ -172,36 +172,36 @@ classDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as Telemetry Ingress / Pipeline Client
-    participant Kafka as Kafka Bus (telemetry.spans.raw)
-    participant PipelineService as TelemetryPipelineService
-    participant SplitRules as TelemetrySplitRules (Pure Logic)
-    participant BaselineFlow as TrivialBaselineWorkflow
-    participant SpecService as NetworkSpecService
-    participant PyTorchAdapter as PyTorchNeuralComputeAdapter
-    participant DB as Postgres / AlloyDB Cluster
-    participant OTEL as OpenTelemetry Collector
+    actor Client as "Telemetry Ingress Client"
+    participant Kafka as "Kafka Bus (telemetry.spans.raw)"
+    participant PipelineService as "TelemetryPipelineService"
+    participant SplitRules as "TelemetrySplitRules (Pure Logic)"
+    participant BaselineFlow as "TrivialBaselineWorkflow"
+    participant SpecService as "NetworkSpecService"
+    participant PyTorchAdapter as "PyTorchNeuralComputeAdapter"
+    participant DB as "Postgres / AlloyDB Cluster"
+    participant OTEL as "OpenTelemetry Collector"
 
     Note over Client,OTEL: Step 1: High-Throughput Streaming and Zero-Leakage Split
     Client->>Kafka: Produce telemetry records (Key: trace_id)
     Kafka-->>PipelineService: Stream consumption micro-batch
-    PipelineService->>OTEL: Start Root Span ("telemetry_pipeline.consume")
+    PipelineService->>OTEL: Start Root Span (telemetry_pipeline.consume)
     
     PipelineService->>SplitRules: execute_leak_free_split(records, train_ratio)
-    Note over SplitRules: Group by trace_id and sort chronologically.<br/>Assert: TrainTraces ∩ ValTraces = ∅<br/>Assert: max(TrainTs) <= min(ValTs)
+    Note over SplitRules: Group by trace_id and sort chronologically. Assert TrainTraces disjoint from ValTraces.
     SplitRules-->>PipelineService: DatasetSplitResult (Zero Leakage Verified)
     
     PipelineService->>BaselineFlow: execute_foundation_flow(DatasetSplitResult)
-    Note over BaselineFlow: Compute Empirical Prior and Majority Class.<br/>Evaluate Accuracy, Precision, Recall, F1 on Val split.
+    Note over BaselineFlow: Compute Empirical Prior and Majority Class. Evaluate Accuracy, Precision, Recall, F1 on Val split.
     BaselineFlow-->>PipelineService: BaselineEvaluationResult
     PipelineService->>DB: INSERT INTO telemetry_pipeline_records and baseline_benchmarks
     PipelineService-->>Kafka: Commit offset asynchronously
 
     Note over Client,OTEL: Step 2: Initialize PyTorch Network and Verify Tiny-Batch Overfit
     Client->>SpecService: verify_tiny_batch_overfit(TinyBatchOverfitCommand)
-    SpecService->>OTEL: Start Span ("network_spec.verify_overfit")
+    SpecService->>OTEL: Start Span (network_spec.verify_overfit)
     SpecService->>PyTorchAdapter: fit_and_verify_overfit(model_spec, command)
-    Note over PyTorchAdapter: PyTorchNeuralArchitecture (ResidualBlock + LayerNorm + GELU).<br/>AdamW (lr=0.05, decay=1e-4) + Gradient Clipping (norm=1.0).<br/>Run 50 steps until final_loss <= 0.08.
+    Note over PyTorchAdapter: PyTorchNeuralArchitecture (ResidualBlock + LayerNorm + GELU). AdamW + Gradient Clipping.
     PyTorchAdapter-->>SpecService: initial_loss, final_loss, steps, is_overfit=True
     SpecService->>DB: UPDATE network_specs SET status = 'TINY_BATCH_OVERFIT_VERIFIED'
     SpecService-->>Client: Result.ok(NetworkSpecModel: TINY_BATCH_OVERFIT_VERIFIED)
@@ -210,7 +210,7 @@ sequenceDiagram
     Note over Client,OTEL: Step 3: Production Serving and Autonomous Self-Learning Closed-Loop
     Kafka->>PyTorchAdapter: Online Telemetry Vector x
     PyTorchAdapter-->>Client: Inference Prediction (Anomaly / Outage Probability)
-    Note over SpecService,DB: Error Analysis and Drift Engine detects discrepancy or false positive.<br/>Failure records appended to active telemetry pool.<br/>Triggers automatic retraining workflow when drift threshold is exceeded.
+    Note over SpecService,DB: Error Analysis and Drift Engine detects discrepancy or false positive. Append to active telemetry pool.
 ```
 
 ---
@@ -277,10 +277,107 @@ flowchart TD
 ## 7. Critical Algorithms Implemented in the Engine
 
 ### 7.1 Learning Core
-- **Forward Pass and Backpropagation**: Reverse-mode automatic differentiation applying the chain rule through PyTorch tensors.
-- **Optimization Strategy**: AdamW with decoupled weight decay ($\lambda = 10^{-4}$). Supports SGD with momentum and RMSprop.
-- **Learning Rate Schedules**: Linear warmup followed by cosine decay.
-- **Gradient Safeguards**: Mixed precision execution and gradient norm clipping ($\|g\|_2 \le 1.0$) to eliminate gradient explosion during telemetry spikes.
+
+#### 7.1.1 Reverse-Mode Automatic Differentiation (Backpropagation)
+
+##### 1. Non-Technical Definition
+Think of baking a cake using a sequence of five steps. If the cake turns out too salty, you need to know exactly how much each teaspoon of salt contributed to that bad taste. Backpropagation is the mathematical process of starting at the final mistake (the loss) and tracing backward step by step through every instruction to tell each ingredient exactly how much it needs to change.
+
+##### 2. Technical Definition
+Reverse-mode automatic differentiation applies the multivariate chain rule from output loss scalar $L$ back to all model parameter tensors $\mathbf{W}_l$:
+$$\frac{\partial L}{\partial \mathbf{W}_l} = \frac{\partial L}{\partial \mathbf{a}_l} \cdot \frac{\partial \mathbf{a}_l}{\partial \mathbf{z}_l} \cdot \frac{\partial \mathbf{z}_l}{\partial \mathbf{W}_l}$$
+Where $\mathbf{z}_l = \mathbf{W}_l \mathbf{a}_{l-1} + \mathbf{b}_l$ and $\mathbf{a}_l = \sigma(\mathbf{z}_l)$. Intermediate activation tensors are cached during the forward pass and consumed during backward adjoint propagation.
+
+##### 3. Algorithm Flow Diagram
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
+flowchart LR
+    INPUT["Input Tensor x"] -->|Forward Pass| L1["Layer 1 Activation"]
+    L1 -->|Forward Pass| L2["Layer 2 Activation"]
+    L2 -->|Forward Pass| HEAD["Logits Output"]
+    HEAD -->|Evaluate Objective| LOSS["Scalar Loss L"]
+    LOSS -->|Backward Adjoint| GRAD_HEAD["dL / dLogits"]
+    GRAD_HEAD -->|Chain Rule| GRAD_L2["dL / dW2"]
+    GRAD_L2 -->|Chain Rule| GRAD_L1["dL / dW1"]
+```
+
+##### 4. Language-Agnostic Pseudocode
+```python
+def backward_pass(layers: list[Layer], loss_gradient: Tensor) -> None:
+    current_gradient = loss_gradient
+    for layer in reversed(layers):
+        # Accumulate parameter gradients
+        layer.grad_weight = matrix_multiply(transpose(layer.cached_input), current_gradient)
+        layer.grad_bias = vector_sum(current_gradient, axis=0)
+        # Propagate adjoint gradient to preceding layer
+        current_gradient = matrix_multiply(current_gradient, transpose(layer.weight))
+        current_gradient = elementwise_multiply(current_gradient, activation_derivative(layer.cached_pre_activation))
+```
+
+#### 7.1.2 AdamW Optimization with Decoupled Weight Decay
+
+##### 1. Non-Technical Definition
+When a ball rolls down a hilly terrain toward the lowest point, momentum keeps it from getting stuck in small potholes. AdamW is like a ball rolling down a hill that remembers its speed (momentum) and adjusts its foot grip based on how steep or bumpy the terrain is (adaptive friction), while gently smoothing itself down so it never gets too heavy.
+
+##### 2. Technical Definition
+AdamW computes exponential moving averages of gradients ($m_t$) and squared gradients ($v_t$), while decoupling $L_2$ weight decay directly into the parameter update rather than mixing it into the gradient momentum moments:
+$$m_t = \beta_1 m_{t-1} + (1 - \beta_1) g_t, \quad v_t = \beta_2 v_{t-1} + (1 - \beta_2) g_t^2$$
+$$\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1 - \beta_2^t}$$
+$$\theta_t = \theta_{t-1} - \eta_t \left( \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda \theta_{t-1} \right)$$
+
+##### 3. Algorithm Flow Diagram
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
+flowchart TD
+    GRAD["Raw Gradient g_t"] --> MOMENTUM["First Moment m_t (beta1=0.9)"]
+    GRAD --> VARIANCE["Second Moment v_t (beta2=0.999)"]
+    MOMENTUM --> BIAS_M["Bias Correction m_hat"]
+    VARIANCE --> BIAS_V["Bias Correction v_hat"]
+    BIAS_M --> STEP["Adaptive Step: m_hat / (sqrt(v_hat) + eps)"]
+    BIAS_V --> STEP
+    STEP --> UPDATE["Weight Update: theta - lr * (Step + lambda * theta)"]
+```
+
+##### 4. Language-Agnostic Pseudocode
+```python
+def adamw_step(params: list[Tensor], grads: list[Tensor], m: list[Tensor], v: list[Tensor], t: int, lr: float, beta1: float, beta2: float, eps: float, weight_decay: float) -> None:
+    for i in range(len(params)):
+        g = grads[i]
+        m[i] = beta1 * m[i] + (1.0 - beta1) * g
+        v[i] = beta2 * v[i] + (1.0 - beta2) * (g * g)
+        m_hat = m[i] / (1.0 - (beta1 ** t))
+        v_hat = v[i] / (1.0 - (beta2 ** t))
+        adaptive_step = m_hat / (square_root(v_hat) + eps)
+        params[i] = params[i] - lr * (adaptive_step + weight_decay * params[i])
+```
+
+#### 7.1.3 Gradient Norm Clipping
+
+##### 1. Non-Technical Definition
+During sudden internet outages or telemetry spikes, the numbers entering the model can shoot up astronomically. Without a safety fuse, this would kick the model's weights into infinity and destroy all previous learning. Gradient clipping acts as an electrical circuit breaker: if the total force of the adjustment exceeds a safe ceiling, it scales it down uniformly while preserving the exact direction.
+
+##### 2. Technical Definition
+Global gradient clipping rescales the concatenation of all gradient vectors if their collective $L_2$ Euclidean norm exceeds threshold $c$:
+$$\|g\|_2 = \sqrt{\sum_{i} \|g_i\|_2^2}$$
+$$g_i \leftarrow g_i \cdot \min\left(1.0, \frac{c}{\|g\|_2 + \epsilon}\right)$$
+
+##### 3. Language-Agnostic Pseudocode
+```python
+def clip_gradient_norm(gradients: list[Tensor], max_norm: float, eps: float = 1e-6) -> float:
+    total_norm_sq = 0.0
+    for grad in gradients:
+        total_norm_sq += sum(grad * grad)
+    total_norm = square_root(total_norm_sq)
+    clip_coefficient = max_norm / (total_norm + eps)
+    if clip_coefficient < 1.0:
+        for grad in gradients:
+            grad.multiply_scalar(clip_coefficient)
+    return total_norm
+```
+
+---
 
 ### 7.2 Optimization Stability
 
@@ -307,7 +404,6 @@ $$\mathbf{W} \sim \mathcal{U}\left(-\sqrt{\frac{6}{\text{fan\_in}}}, \sqrt{\frac
 ##### 4. Pseudocode Implementation
 ```python
 def initialize_kaiming_uniform(weight_tensor: Tensor, bias_tensor: Tensor | None = None) -> None:
-    # Step 1: Calculate fan-in from tensor shape dimensions
     shape = weight_tensor.shape
     if len(shape) == 2:
         fan_in = shape[1]
@@ -319,28 +415,85 @@ def initialize_kaiming_uniform(weight_tensor: Tensor, bias_tensor: Tensor | None
     else:
         fan_in = shape[0]
 
-    # Step 2: Calculate uniform distribution boundary
     bound = math.sqrt(6.0 / max(1, fan_in))
 
-    # Step 3: Sample weights uniformly and zero biases without gradient tracking
     with torch.no_grad():
         weight_tensor.uniform_(-bound, bound)
         if bias_tensor is not None:
             bias_tensor.zero_()
 ```
 
-- **Normalization**: Pre-activation Layer Normalization (`LayerNorm`) across hidden feature dimensions:
-  $$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mathrm{E}[\mathbf{x}]}{\sqrt{\mathrm{Var}[\mathbf{x}] + \epsilon}} \odot \boldsymbol{\gamma} + \boldsymbol{\beta}$$
-- **Residual Highway**: Identity skip connections guaranteeing unobstructed gradient flow:
-  $$\mathbf{h}_{l+1} = \mathcal{F}(\mathbf{h}_l, \mathcal{W}_l) + \mathbf{h}_l$$
+#### 7.2.2 Layer Normalization (LayerNorm)
 
-### 7.3 Activations and Loss Objectives
-- **Non-Linearities**: Gaussian Error Linear Units (GELU) with smooth non-monotonic gradient transitions:
-  $$\text{GELU}(x) = x \cdot \Phi(x) = x \cdot \frac{1}{2}\left[1 + \text{erf}\left(\frac{x}{\sqrt{2}}\right)\right]$$
-- **Loss Objectives**: Numerically stabilized multi-class Cross-Entropy and Focal Loss for imbalanced distributed anomaly detection.
+##### 1. Non-Technical Definition
+When students from schools with completely different grading curves are evaluated, raw test scores cannot be directly compared. Layer normalization levels the playing field: before each processing step, it recalibrates all measurements so the group average is zero and the spread is standardized, preventing one loud feature from drowning out everything else.
 
-### 7.4 Regularization and Generalization
-- Decoupled weight decay ($10^{-4}$), feature dropout ($p = 0.1$), and early stopping based on validation split loss plateau.
+##### 2. Technical Definition
+LayerNorm standardizes activations across the channel/feature dimension $D$ independently for each sample, followed by affine scaling ($\gamma$) and shifting ($\beta$):
+$$\mu = \frac{1}{D} \sum_{i=1}^D x_i, \quad \sigma^2 = \frac{1}{D} \sum_{i=1}^D (x_i - \mu)^2$$
+$$\hat{x}_i = \frac{x_i - \mu}{\sqrt{\sigma^2 + \epsilon}}, \quad y_i = \gamma_i \hat{x}_i + \beta_i$$
+
+##### 3. Language-Agnostic Pseudocode
+```python
+def layer_norm_forward(x: Tensor, gamma: Tensor, beta: Tensor, eps: float = 1e-5) -> Tensor:
+    feature_dim = x.shape[-1]
+    mean = sum(x, axis=-1, keepdims=True) / feature_dim
+    variance = sum((x - mean) ** 2, axis=-1, keepdims=True) / feature_dim
+    normalized = (x - mean) / square_root(variance + eps)
+    return normalized * gamma + beta
+```
+
+#### 7.2.3 Residual Identity Skip Connections
+
+##### 1. Non-Technical Definition
+When passing a message through thirty people in a game of telephone, words get garbled. An identity skip connection is like handing each listener the original handwritten note alongside the spoken whisper. Even if the middle steps distort the message, the core information remains intact.
+
+##### 2. Technical Definition
+Skip connections bypass non-linear transformations $\mathcal{F}(\mathbf{x})$ by directly adding input $\mathbf{x}$ to the output block:
+$$\mathbf{y} = \mathcal{F}(\mathbf{x}, \mathbf{W}) + \mathbf{x}$$
+During backpropagation, this ensures an uninterrupted additive gradient highway where $\frac{\partial \mathbf{y}}{\partial \mathbf{x}} = \frac{\partial \mathcal{F}}{\partial \mathbf{x}} + \mathbf{I}$, mathematically preventing vanishing gradients regardless of model depth.
+
+---
+
+### 7.3 Non-Linearities and Loss Objectives
+
+#### 7.3.1 Gaussian Error Linear Unit (GELU)
+
+##### 1. Non-Technical Definition
+Standard ReLU acts like a rigid gate: if a number is negative, it gets completely slammed shut to zero. GELU is a gentle, probabilistic gate: larger positive numbers pass freely, slightly negative numbers pass with low probability, and extremely negative numbers fade away smoothly.
+
+##### 2. Technical Definition
+GELU weights inputs by their probability under a standard normal cumulative distribution:
+$$\text{GELU}(x) = x \cdot P(X \le x) = x \cdot \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{x}{\sqrt{2}} \right) \right]$$
+
+##### 3. Language-Agnostic Pseudocode
+```python
+def gelu_forward(x: Tensor) -> Tensor:
+    return 0.5 * x * (1.0 + error_function(x / square_root(2.0)))
+```
+
+#### 7.3.2 Numerically Stabilized Cross-Entropy and Focal Loss
+
+##### 1. Non-Technical Definition
+In distributed systems, 99.9% of telemetry logs represent normal operations and only 0.1% represent catastrophic failures. Standard loss functions get complacent because guessing normal all the time gives 99.9% accuracy. Focal loss penalizes easy, normal examples and focuses the model's attention on the rare, hard-to-detect incidents.
+
+##### 2. Technical Definition
+Focal Loss adds a modulating factor $(1 - p_t)^\gamma$ to standard cross-entropy loss:
+$$\text{FL}(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)$$
+Where $p_t$ is the model's estimated probability for the ground-truth class, $\gamma \ge 0$ is the focusing parameter, and $\alpha_t$ balances class frequency.
+
+##### 3. Language-Agnostic Pseudocode
+```python
+def focal_loss(logits: Tensor, targets: list[int], gamma: float = 2.0, alpha: float = 0.25) -> float:
+    probabilities = softmax(logits)
+    batch_loss = 0.0
+    for i in range(len(targets)):
+        target_idx = targets[i]
+        p_t = max(1e-7, min(1.0 - 1e-7, probabilities[i][target_idx]))
+        modulating_factor = (1.0 - p_t) ** gamma
+        batch_loss += -alpha * modulating_factor * natural_log(p_t)
+    return batch_loss / len(targets)
+```
 
 ---
 
