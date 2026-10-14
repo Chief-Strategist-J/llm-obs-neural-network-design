@@ -1,0 +1,4 @@
+app:
+  env: "test"
+database:
+  pool_size: 2

@@ -1,0 +1,3 @@
+flags:
+  enable_experimental_architectures: false
+  enable_strict_budget_enforcement: true

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neural-network-design
+  labels:
+    app: neural-network-design
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neural-network-design
+  template:
+    metadata:
+      labels:
+        app: neural-network-design
+    spec:
+      containers:
+        - name: neural-network-design
+          image: neural-network-design:latest
+          ports:
+            - containerPort: 8080

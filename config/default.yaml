@@ -1,0 +1,12 @@
+app:
+  name: "neural-network-design"
+  env: "development"
+  port: 8080
+routes:
+  health: "/health"
+  network_spec: "/v1/network-spec"
+database:
+  pool_size: 10
+  timeout_ms: 5000
+observability:
+  service_name: "neural-network-design"

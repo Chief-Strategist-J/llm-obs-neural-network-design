@@ -1,0 +1,4 @@
+app:
+  env: "production"
+observability:
+  sample_rate: 0.1

@@ -1,0 +1,114 @@
+openapi: "3.0.3"
+info:
+  title: Neural Network Design Service API
+  version: "1.0.0"
+  description: Hexagonal service for Neural Network Design specifications, topology verification, and layer parameter estimations.
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/network-spec:
+    post:
+      summary: Create and validate a neural network architecture specification
+      operationId: createNetworkSpec
+      parameters:
+        - name: traceparent
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNetworkSpecRequest"
+      responses:
+        "201":
+          description: Network specification created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkSpecResponse"
+        "400":
+          description: Invalid input shape or validation failure
+        "500":
+          description: Internal server error
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: "ok"
+    CreateNetworkSpecRequest:
+      type: object
+      required:
+        - name
+        - architecture_type
+        - layer_count
+        - parameter_budget
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        architecture_type:
+          type: string
+          enum: [transformer, cnn, mlp, rnn, hybrid]
+        layer_count:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        parameter_budget:
+          type: integer
+          minimum: 1
+    NetworkSpecResponse:
+      type: object
+      required:
+        - success
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required:
+            - id
+            - name
+            - architecture_type
+            - layer_count
+            - parameter_budget
+            - status
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            architecture_type:
+              type: string
+            layer_count:
+              type: integer
+            parameter_budget:
+              type: integer
+            status:
+              type: string
+        meta:
+          type: object
+          required:
+            - trace_id
+          properties:
+            trace_id:
+              type: string

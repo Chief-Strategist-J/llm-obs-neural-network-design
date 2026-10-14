@@ -1,0 +1,6 @@
+{
+  "topic": "neural-network.spec-created.v1",
+  "partitions": 3,
+  "replication_factor": 1,
+  "retention_ms": 604800000
+}

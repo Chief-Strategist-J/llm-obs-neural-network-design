@@ -1,0 +1,8 @@
+name: neural-network-design
+version: 0.1.0
+type: service
+runtime: python
+layer: 2
+bounded_context: neural_network_design
+features:
+  - network_spec

@@ -1,0 +1,5 @@
+features:
+  network_spec:
+    path: src/features/network_spec
+    status: active
+    tier: core
