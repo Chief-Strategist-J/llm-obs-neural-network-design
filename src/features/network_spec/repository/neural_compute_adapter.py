@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
@@ -23,6 +24,14 @@ class NeuralComputePort(ABC):
     def fit_and_verify_overfit(
         self, model_spec: NetworkSpecModel, command: TinyBatchOverfitCommand
     ) -> tuple[float, float, int, bool]:
+        pass
+
+    @abstractmethod
+    def save_checkpoint(self, spec_id: str, checkpoint_dir: str) -> str:
+        pass
+
+    @abstractmethod
+    def load_checkpoint(self, checkpoint_path: str) -> bool:
         pass
 
 
@@ -69,6 +78,10 @@ class PyTorchNeuralArchitecture(nn.Module):
 
 
 class PyTorchNeuralComputeAdapter(NeuralComputePort):
+    def __init__(self) -> None:
+        self._active_model: PyTorchNeuralArchitecture | None = None
+        self._active_optimizer: torch.optim.Optimizer | None = None
+
     def fit_and_verify_overfit(
         self, model_spec: NetworkSpecModel, command: TinyBatchOverfitCommand
     ) -> tuple[float, float, int, bool]:
@@ -112,4 +125,36 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
                 break
 
         is_overfit = final_loss <= command.target_loss_threshold
+        if is_overfit:
+            self._active_model = net
+            self._active_optimizer = optimizer
+
         return initial_loss, final_loss, steps, is_overfit
+
+    def save_checkpoint(self, spec_id: str, checkpoint_dir: str) -> str:
+        if self._active_model is None:
+            raise ValueError("No active trained model to persist.")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        path = os.path.join(checkpoint_dir, f"{spec_id}.pt")
+        torch.save(
+            {
+                "spec_id": spec_id,
+                "model_state_dict": self._active_model.state_dict(),
+                "optimizer_state_dict": (
+                    self._active_optimizer.state_dict() if self._active_optimizer else None
+                ),
+            },
+            path,
+        )
+        return path
+
+    def load_checkpoint(self, checkpoint_path: str) -> bool:
+        if not os.path.exists(checkpoint_path):
+            return False
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        if self._active_model is not None and "model_state_dict" in checkpoint:
+            self._active_model.load_state_dict(checkpoint["model_state_dict"])
+            if self._active_optimizer and checkpoint.get("optimizer_state_dict"):
+                self._active_optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            return True
+        return False
