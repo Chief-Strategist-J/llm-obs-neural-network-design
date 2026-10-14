@@ -1,4 +1,4 @@
-# 0001: Distributed Systems Neural Telemetry and Optimization Engine: Data Integrity, Self-Learning Closed-Loop, Leak-Free Evaluation, and PyTorch Tensor Core
+# 0001: Distributed Systems Telemetry and Neural Network : An Architecture Decision Record (ADR)
 
 - **Status**: Accepted
 - **Date**: 2026-10-14
