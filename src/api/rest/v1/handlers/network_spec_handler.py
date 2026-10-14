@@ -1,5 +1,3 @@
-"""REST ingress handler for network_spec creation."""
-
 from typing import Any, Mapping
 from src.features.network_spec.service.network_spec_service import NetworkSpecService
 from src.features.network_spec.schema.network_spec_schema import NetworkSpecSchema
@@ -25,6 +23,41 @@ class NetworkSpecHandler:
                     meta={"trace_id": ctx.trace_id},
                 )
             err = result.error or ApplicationError("Unknown domain error")
+            return err.status_code, ApiResponse(
+                success=False,
+                data=None,
+                meta={"trace_id": ctx.trace_id},
+                error={"code": err.canonical_code, "message": err.message},
+            )
+        except ApplicationError as app_err:
+            return app_err.status_code, ApiResponse(
+                success=False,
+                data=None,
+                meta={"trace_id": ctx.trace_id},
+                error={"code": app_err.canonical_code, "message": app_err.message},
+            )
+        except Exception as ex:
+            return 500, ApiResponse(
+                success=False,
+                data=None,
+                meta={"trace_id": ctx.trace_id},
+                error={"code": "INTERNAL_SERVER_ERROR", "message": str(ex)},
+            )
+
+    async def handle_verify_overfit(
+        self, ctx: TraceContext, payload: Mapping[str, Any]
+    ) -> tuple[int, ApiResponse[Mapping[str, Any]]]:
+        try:
+            cmd = NetworkSpecSchema.parse_overfit_command(payload)
+            result = await self._service.verify_tiny_batch_overfit(ctx, cmd)
+            if result.is_ok and result.value:
+                res_data = NetworkSpecSchema.to_api(result.value)
+                return 200, ApiResponse(
+                    success=True,
+                    data=res_data,
+                    meta={"trace_id": ctx.trace_id},
+                )
+            err = result.error or ApplicationError("Overfit verification failed")
             return err.status_code, ApiResponse(
                 success=False,
                 data=None,

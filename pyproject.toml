@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "python-shared",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0",
     "torch>=2.0.0",
     "pyyaml>=6.0",
 ]
@@ -14,6 +16,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
+    "httpx>=0.24.0",
     "mypy>=1.8.0",
     "ruff>=0.2.0"
 ]
