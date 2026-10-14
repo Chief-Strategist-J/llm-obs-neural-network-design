@@ -27,47 +27,52 @@ In distributed systems:
 3. **Automated Trivial Baseline Benchmark**: Establish mandatory empirical baseline performance ($F_1$, Accuracy, MAE) that every candidate neural network must surpass to justify deployment.
 4. **Optimization Stability First**: Guarantee stable gradient propagation via Kaiming uniform weight initialization, Layer Normalization (`LayerNorm`), and residual skip connections.
 5. **Tiny-Batch Overfitting Gate**: Mandate that models overfit 10–100 samples to near-zero loss ($\le 0.08$) to prove graph autograd validity before scaling compute.
-6. **Pure Hexagonal Isolation**: Pure deterministic shared logic (`src/shared/`), isolated domain features (`src/features/`), and concrete drivers/frameworks (`torch.nn.Module`) isolated behind ports.
+6. **Feature Consolidation & Isolation**: Consolidate neural architectures and overfit verification into the existing `network_spec` feature (`src/features/network_spec/`), while isolating pure data ingestion in `system_telemetry_pipeline`.
 
 ---
 
 ## 3. High-Level Architecture (HLD)
 
-The sequence diagram below illustrates the end-to-end execution flow from raw telemetry ingestion to baseline comparison and verified PyTorch residual overfit:
+The sequence diagram below illustrates the end-to-end execution flow across the two consolidated features: `system_telemetry_pipeline` (leak-free split & trivial baseline) and `network_spec` (PyTorch residual architecture & tiny-batch overfit):
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Client as Telemetry Ingress / Pipeline Client
-    participant Router as TelemetryRouter / Handler
-    participant Service as TelemetryPipelineService
+    participant PipelineRouter as TelemetryRouter / Handler
+    participant PipelineService as TelemetryPipelineService
     participant SplitRules as TelemetrySplitRules (Pure Logic)
     participant BaselineFlow as TrivialBaselineWorkflow
-    participant PyTorchCore as PyTorchResidualTelemetryModel
-    participant Repo as TelemetryPipelineRepository (AlloyDB/Mem)
+    participant SpecService as NetworkSpecService
+    participant PyTorchAdapter as PyTorchNeuralComputeAdapter
+    participant DB as Postgres / AlloyDB Cluster
     participant OTEL as OpenTelemetry Collector
 
-    Client->>Router: POST /v1/telemetry-pipeline (Records, TaskSpec, TrainRatio)
-    Router->>OTEL: Start Root Span ("telemetry_pipeline.initialize", W3C traceparent)
-    Router->>Service: Dispatch Inbound Command (PipelineTaskSpecDTO)
+    Note over Client,OTEL: Step 1: Ingest Data, Assert Zero-Leakage & Benchmark Trivial Baseline
+    Client->>PipelineRouter: POST /v1/telemetry-pipeline (Records, TaskSpec, TrainRatio)
+    PipelineRouter->>OTEL: Start Root Span ("telemetry_pipeline.initialize", W3C traceparent)
+    PipelineRouter->>PipelineService: Dispatch PipelineTaskSpecDTO
     
-    Service->>SplitRules: execute_leak_free_split(records, train_ratio)
+    PipelineService->>SplitRules: execute_leak_free_split(records, train_ratio)
     Note over SplitRules: Group by trace_id & sort chronologically.<br/>Assert: TrainTraces ∩ ValTraces = ∅<br/>Assert: max(TrainTs) <= min(ValTs)
-    SplitRules-->>Service: DatasetSplitResult (Leak-free verified)
+    SplitRules-->>PipelineService: DatasetSplitResult (Zero Leakage Verified)
     
-    Service->>BaselineFlow: execute_foundation_flow(DatasetSplitResult)
+    PipelineService->>BaselineFlow: execute_foundation_flow(DatasetSplitResult)
     Note over BaselineFlow: Compute Empirical Prior & Majority Class.<br/>Evaluate Accuracy, Precision, Recall, F1 on Val split.
-    BaselineFlow-->>Service: BaselineEvaluationResult
-    
-    Service->>PyTorchCore: fit_tiny_batch(TinyBatchSampleDTO, lr, max_steps)
-    Note over PyTorchCore: Kaiming Init -> LayerNorm -> ResidualBlock -> GELU.<br/>AdamW backpropagation + Gradient Clipping (norm=1.0).<br/>Assert: final_loss <= 0.08 (Verify autograd graph).
-    PyTorchCore-->>Service: OverfitVerificationResult (TINY_BATCH_OVERFIT_PASSED)
-    
-    Service->>Repo: save(TelemetryPipelineModel)
-    Repo-->>Service: Persisted Entity
-    Service-->>Router: Result.ok(TelemetryPipelineModel)
-    Router->>OTEL: Set Status OK & End Span
-    Router-->>Client: 201 Created (Envelope: { success: true, data: {...}, meta: { trace_id } })
+    BaselineFlow-->>PipelineService: BaselineEvaluationResult
+    PipelineService->>DB: INSERT INTO telemetry_pipeline_records & baseline_benchmarks
+    PipelineService-->>PipelineRouter: Result.ok(TelemetryPipelineModel)
+    PipelineRouter-->>Client: 201 Created (Baseline benchmark score established)
+
+    Note over Client,OTEL: Step 2: Initialize PyTorch Network & Verify Tiny-Batch Overfit
+    Client->>SpecService: verify_tiny_batch_overfit(TinyBatchOverfitCommand)
+    SpecService->>OTEL: Start Span ("network_spec.verify_overfit")
+    SpecService->>PyTorchAdapter: fit_and_verify_overfit(model_spec, command)
+    Note over PyTorchAdapter: PyTorchNeuralArchitecture (ResidualBlock + LayerNorm + GELU).<br/>AdamW (lr=0.05, decay=1e-4) + Gradient Clipping (norm=1.0).<br/>Run 50 steps until final_loss <= 0.08.
+    PyTorchAdapter-->>SpecService: initial_loss, final_loss, steps, is_overfit=True
+    SpecService->>DB: UPDATE network_specs SET status = 'TINY_BATCH_OVERFIT_VERIFIED'
+    SpecService-->>Client: Result.ok(NetworkSpecModel: TINY_BATCH_OVERFIT_VERIFIED)
+    SpecService->>OTEL: Set Span Status OK & End Span
 ```
 
 ---
@@ -76,67 +81,52 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    subgraph Data Layer ["1. Data & Objective Foundation (Mandatory Precondition)"]
-        A["Telemetry Records (Spans, Timestamps, Labels)"] --> B["Anti-Corruption Layer (Schema Validation)"]
-        B --> C["Deterministic Split Engine (Trace & Temporal Disjoint)"]
+    subgraph Feature 1: system_telemetry_pipeline ["system_telemetry_pipeline (Data & Evaluation Engine)"]
+        A["Telemetry Records (Spans, Timestamps, Labels)"] --> B["Anti-Corruption Layer (TelemetryPipelineSchema)"]
+        B --> C["Deterministic Split Engine (TelemetrySplitRules)"]
         C --> D["Train Split (Chronological Past)"]
         C --> E["Validation Split (Chronological Future)"]
+        D --> F["TrivialBaselineWorkflow (Empirical Majority Class)"]
+        E --> F
+        F --> G{"Beats Trivial Baseline?"}
+        G -- "No" --> H["HALT: Neural Network Not Justified / Data Noise"]
     end
 
-    subgraph Baseline Layer ["2. Trivial Baseline Verification Gate"]
-        D --> F["Empirical Majority Class / Prior Mean"]
-        F --> G["Evaluate Against Validation Split"]
-        G --> H{"Beats Trivial Baseline?"}
-        H -- "No" --> I["HALT: Neural Network Not Justified / Debug Data"]
-    end
-
-    subgraph Optimization Layer ["3. Stability & Architecture Layer"]
-        H -- "Yes" --> J["PyTorch Tensor Input Tensorization"]
-        J --> K["Kaiming Initialization & LayerNorm"]
-        K --> L["Residual MLP Backbone (Skip Connections + GELU)"]
-        L --> M["Loss Objective (CrossEntropy / Focal Loss)"]
+    subgraph Feature 2: network_spec ["network_spec (PyTorch Neural Core & Architecture)"]
+        G -- "Yes" --> I["NetworkSpecService (Create Spec)"]
+        I --> J["PyTorchNeuralArchitecture (nn.Module)"]
+        J --> K["Kaiming Uniform Weight Initialization"]
+        K --> L["LayerNorm + ResidualBlock (Skip Connections + GELU)"]
+        L --> M["Loss Objective (CrossEntropyLoss)"]
         M --> N["AdamW Optimizer + Gradient Clipping (norm <= 1.0)"]
-    end
-
-    subgraph Overfit Gate ["4. Tiny-Batch Overfit Gate (10-100 Samples)"]
-        N --> O["Overfit Tiny Batch for 30-50 Iterations"]
+        N --> O["TinyBatchOverfitWorkflow (10-100 Samples)"]
         O --> P{"Final Loss <= 0.08?"}
-        P -- "No" --> Q["FAIL: Structural Bug in Graph / Labels"]
-        P -- "Yes" --> R["Scale Up: Learning Rate -> Batch Size -> Width & Depth"]
+        P -- "No" --> Q["FAIL: Structural Bug in Tensor Graph / Dead Activations"]
+        P -- "Yes" --> R["State Transition: TINY_BATCH_OVERFIT_VERIFIED -> Authorize Scaling"]
     end
 ```
 
 ---
 
-## 5. Entity State Machine: Telemetry Pipeline Lifecycle
+## 5. Entity State Machine: Telemetry & Network Spec Lifecycles
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SPECIFIED: Pipeline Spec Submitted
-    note right of SPECIFIED
-      Input shape, target labels,
-      and modality declared
-    end note
+    state "system_telemetry_pipeline Lifecycle" as Pipeline {
+        [*] --> SPECIFIED: Task Spec & Records Ingested
+        SPECIFIED --> SPLIT_VALIDATED: Execute Leak-Free Trace/Time Split
+        SPLIT_VALIDATED --> BASELINE_ESTABLISHED: Trivial Baseline Benchmarked
+        BASELINE_ESTABLISHED --> [*]
+    }
 
-    SPECIFIED --> SPLIT_VALIDATED: Execute Leak-Free Split
-    note right of SPLIT_VALIDATED
-      Traces strictly segregated
-      Temporal order guaranteed
-    end note
-
-    SPLIT_VALIDATED --> BASELINE_ESTABLISHED: Run Trivial Baseline
-    note right of BASELINE_ESTABLISHED
-      Majority class & prior mean
-      Accuracy and F1 calculated
-    end note
-
-    BASELINE_ESTABLISHED --> TINY_BATCH_VERIFYING: Initialize PyTorch Model
-    TINY_BATCH_VERIFYING --> TINY_BATCH_OVERFIT_PASSED: Final Loss <= 0.08
-    TINY_BATCH_VERIFYING --> TINY_BATCH_OVERFIT_FAILED: Loss Plateau / Divergence
-
-    TINY_BATCH_OVERFIT_PASSED --> READY_FOR_SCALING: Authorized for Production Training
-    TINY_BATCH_OVERFIT_FAILED --> [*]: Terminate & Report Graph Defect
-    READY_FOR_SCALING --> [*]
+    state "network_spec Lifecycle" as Spec {
+        [*] --> PENDING: Architecture Declared
+        PENDING --> TINY_BATCH_OVERFIT_VERIFIED: Tiny Batch Loss <= 0.08
+        PENDING --> ACTIVE: Direct Activation (If pre-verified)
+        TINY_BATCH_OVERFIT_VERIFIED --> ACTIVE: Authorized for Production Scaling
+        ACTIVE --> ARCHIVED: Deprecated Model Version
+        ARCHIVED --> [*]
+    }
 ```
 
 ---
@@ -147,7 +137,7 @@ stateDiagram-v2
 erDiagram
     telemetry_pipeline_records ||--o{ pipeline_splits : "produces"
     telemetry_pipeline_records ||--|| baseline_benchmarks : "evaluates"
-    telemetry_pipeline_records ||--o{ neural_overfit_runs : "verifies"
+    telemetry_pipeline_records ||--o{ network_specs : "benchmarks against"
 
     telemetry_pipeline_records {
         string pipeline_id PK
@@ -180,15 +170,21 @@ erDiagram
         int validation_sample_count
     }
 
-    neural_overfit_runs {
-        string run_id PK
-        string pipeline_id FK
-        string model_name
+    network_specs {
+        string id PK
+        string name
+        string architecture_type
+        int input_dim
+        int hidden_dim
+        int num_classes
+        int layer_count
+        bigint parameter_budget
+        string status "PENDING | TINY_BATCH_OVERFIT_VERIFIED | ACTIVE | ARCHIVED"
         float initial_loss
         float final_loss
         int steps_taken
-        boolean is_overfitted
-        string status "TINY_BATCH_OVERFIT_PASSED | FAILED"
+        boolean is_overfit_verified
+        timestamp created_at
     }
 ```
 
@@ -200,8 +196,9 @@ erDiagram
 |---|---|---|---|
 | **Leak-Free Causal Split Engine** | **HAVE** | `src/features/system_telemetry_pipeline/rules/telemetry_split_rules.py` | Eliminates cross-trace data contamination and temporal lookahead leakage. |
 | **Automated Trivial Baseline Engine** | **HAVE** | `src/features/system_telemetry_pipeline/workflows/trivial_baseline_workflow.py` | Proves whether neural learning yields positive information gain over simple heuristics. |
-| **PyTorch Residual Tensor Core** | **HAVE** | `src/features/neural_learning_core/repository/pytorch_model_adapter.py` | Implements stable Kaiming init, LayerNorm, GELU, and gradient clipping. |
-| **Tiny-Batch Overfit Verification Gate** | **HAVE** | `src/features/neural_learning_core/workflows/tiny_batch_overfit_workflow.py` | Catches broken gradient graphs before spinning up expensive GPU clusters. |
+| **PyTorch Residual Tensor Architecture** | **HAVE** | `src/features/network_spec/repository/neural_compute_adapter.py` (`PyTorchNeuralArchitecture`) | Implements stable Kaiming init, LayerNorm, GELU, and residual skip connections. |
+| **Tiny-Batch Overfit Verification Gate** | **HAVE** | `src/features/network_spec/workflows/network_spec_workflow.py` (`execute_overfit_verification_flow`) | Catches broken gradient graphs before spinning up expensive GPU clusters. |
+| **Consolidated Feature Boundaries** | **HAVE** | `system_telemetry_pipeline` (data) + `network_spec` (architecture) | Strictly enforces SRP and avoids fragmented, redundant micro-packages. |
 | **Centralized OpenTelemetry Tracing** | **HAVE** | `src/infra/observability/tracer.py` linked to `python-shared` | Preserves W3C `traceparent` across all domain services and workflows. |
 | **Multi-Stage Containerization** | **HAVE** | `Dockerfile`, `Dockerfile.dev`, `deploy/docker/docker-compose.yaml` | Production deployment isolation on `llmobs-network`. |
 | **Unconstrained Deep Auto-Tuning** | **DO NOT HAVE** | *Deliberately Excluded* | Tuning 100+ layers before baseline validation guarantees overfitting on noise. |
@@ -211,10 +208,57 @@ erDiagram
 
 ---
 
-## 8. Database Tables & Migration Specifications
+## 8. Detailed Mathematical Algorithms & Implementations
 
-### 8.1 SQL Migration (`0002_telemetry_foundation_tables.sql`)
+### 8.1 Causal Trace-Disjoint Splitting Algorithm
+- **Input**: Set of telemetry spans $S = \{s_1, \dots, s_N\}$ with trace identifiers $\tau(s_i)$ and timestamps $t(s_i)$.
+- **Algorithm**:
+  1. Extract unique traces $T = \{\tau(s) \mid s \in S\}$ and compute the minimum timestamp for each trace: $t_{\min}(\tau) = \min \{ t(s) \mid \tau(s) = \tau \}$.
+  2. Chronologically sort traces by $t_{\min}(\tau)$.
+  3. Partition $T$ at index $K = \lfloor |T| \times \text{train\_ratio} \rfloor$ into $T_{\text{train}}$ and $T_{\text{val}}$.
+  4. Assert $T_{\text{train}} \cap T_{\text{val}} = \emptyset$ and $\max_{s \in S_{\text{train}}} t(s) \le \min_{s \in S_{\text{val}}} t(s)$.
+
+### 8.2 PyTorch Deep Residual Block & Layer Normalization
+- **Layer Normalization**:
+  $$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mathrm{E}[\mathbf{x}]}{\sqrt{\mathrm{Var}[\mathbf{x}] + \epsilon}} \odot \boldsymbol{\gamma} + \boldsymbol{\beta}$$
+- **Residual Block Forward Pass**:
+  $$\mathbf{z} = \text{GELU}\Big(\text{LN}_1(\mathbf{W}_1 \mathbf{h} + \mathbf{b}_1)\Big)$$
+  $$\mathbf{h}_{\text{next}} = \text{GELU}\Big(\text{LN}_2(\mathbf{W}_2 \mathbf{z} + \mathbf{b}_2) + \mathbf{h}\Big)$$
+  where $\mathbf{h}$ is the residual highway identity connection preventing vanishing gradients.
+
+### 8.3 Optimization & Tiny-Batch Overfit Convergence
+- **Loss Function**: Multi-class Cross-Entropy:
+  $$\mathcal{L}(\boldsymbol{\theta}) = -\frac{1}{B} \sum_{i=1}^B \log \left(\frac{e^{\mathbf{z}_i[y_i]}}{\sum_{j=1}^C e^{\mathbf{z}_i[j]}}\right)$$
+- **Decoupled Weight Decay (AdamW) with Gradient Clipping**:
+  $$\mathbf{g}_t = \nabla_{\boldsymbol{\theta}} \mathcal{L}_t(\boldsymbol{\theta}_{t-1})$$
+  $$\tilde{\mathbf{g}}_t = \mathbf{g}_t \cdot \min\left(1, \frac{1.0}{\|\mathbf{g}_t\|_2}\right)$$
+  $$\mathbf{m}_t = \beta_1 \mathbf{m}_{t-1} + (1-\beta_1) \tilde{\mathbf{g}}_t, \quad \mathbf{v}_t = \beta_2 \mathbf{v}_{t-1} + (1-\beta_2) \tilde{\mathbf{g}}_t^2$$
+  $$\boldsymbol{\theta}_t = \boldsymbol{\theta}_{t-1} - \eta \left(\frac{\hat{\mathbf{m}}_t}{\sqrt{\hat{\mathbf{v}}_t} + \epsilon} + \lambda \boldsymbol{\theta}_{t-1}\right)$$
+- **Stopping Rule**: Halt when $\mathcal{L}(\boldsymbol{\theta}_t) \le 0.08$ within $t \le 50$ iterations.
+
+---
+
+## 9. Database Tables & Migration Specifications
+
+### 9.1 SQL Migration (`database/migrations/0001_init.sql`)
 ```sql
+CREATE TABLE IF NOT EXISTS network_specs (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    architecture_type VARCHAR(64) NOT NULL,
+    input_dim INTEGER NOT NULL DEFAULT 16,
+    hidden_dim INTEGER NOT NULL DEFAULT 64,
+    num_classes INTEGER NOT NULL DEFAULT 2,
+    layer_count INTEGER NOT NULL,
+    parameter_budget BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    initial_loss DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    final_loss DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    steps_taken INTEGER NOT NULL DEFAULT 0,
+    is_overfit_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS telemetry_pipeline_records (
     pipeline_id VARCHAR(64) PRIMARY KEY,
     task_name VARCHAR(128) NOT NULL,
@@ -233,28 +277,17 @@ CREATE TABLE IF NOT EXISTS baseline_benchmarks (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS neural_overfit_runs (
-    run_id VARCHAR(64) PRIMARY KEY,
-    pipeline_id VARCHAR(64) NOT NULL REFERENCES telemetry_pipeline_records(pipeline_id) ON DELETE CASCADE,
-    model_name VARCHAR(128) NOT NULL,
-    initial_loss DOUBLE PRECISION NOT NULL,
-    final_loss DOUBLE PRECISION NOT NULL,
-    steps_taken INTEGER NOT NULL,
-    is_overfitted BOOLEAN NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
+CREATE INDEX IF NOT EXISTS idx_network_specs_status ON network_specs (status);
 CREATE INDEX IF NOT EXISTS idx_telemetry_pipeline_status ON telemetry_pipeline_records (status);
 CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipeline_id);
-CREATE INDEX IF NOT EXISTS idx_neural_overfit_pipeline ON neural_overfit_runs (pipeline_id);
 ```
 
 ---
 
-## 9. API Contracts & Envelope JSON Specifications
+## 10. API Contracts & Envelope JSON Specifications
 
-### 9.1 Ingress Request: Pipeline Initialization (`POST /v1/telemetry-pipeline`)
+### 10.1 Pipeline Ingress: `POST /v1/telemetry-pipeline`
+**Request Payload**:
 ```json
 {
   "task_name": "distributed_cascading_failure_detection",
@@ -288,7 +321,7 @@ CREATE INDEX IF NOT EXISTS idx_neural_overfit_pipeline ON neural_overfit_runs (p
 }
 ```
 
-### 9.2 Ingress Response: RFC Envelope (`201 Created`)
+**Response Payload (`201 Created`)**:
 ```json
 {
   "success": true,
@@ -311,35 +344,80 @@ CREATE INDEX IF NOT EXISTS idx_neural_overfit_pipeline ON neural_overfit_runs (p
 }
 ```
 
-### 9.3 PyTorch Tiny-Batch Overfit Request (`POST /v1/neural-learning/verify-overfit`)
+### 10.2 Network Spec Ingress: `POST /v1/network-spec`
+**Request Payload**:
 ```json
 {
-  "model_name": "telemetry_residual_net",
+  "name": "Transformer-Telemetry-Classifier",
+  "architecture_type": "transformer",
   "input_dim": 4,
   "hidden_dim": 32,
   "num_classes": 2,
-  "learning_rate": 0.05,
-  "max_steps": 50,
-  "target_loss_threshold": 0.08,
-  "samples": [
-    { "features": [14.2, 0.95, 120.0, 3.0], "label": 0 },
-    { "features": [18.5, 0.91, 145.0, 4.0], "label": 0 },
-    { "features": [850.0, 0.12, 4500.0, 28.0], "label": 1 },
-    { "features": [920.0, 0.08, 5100.0, 32.0], "label": 1 }
-  ]
+  "layer_count": 2,
+  "parameter_budget": 100000
 }
 ```
 
-### 9.4 PyTorch Tiny-Batch Overfit Response (`200 OK`)
+**Response Payload (`201 Created`)**:
 ```json
 {
   "success": true,
   "data": {
+    "id": "01927e1f-702e-7000-8000-000000000002",
+    "name": "Transformer-Telemetry-Classifier",
+    "architecture_type": "transformer",
+    "input_dim": 4,
+    "hidden_dim": 32,
+    "num_classes": 2,
+    "layer_count": 2,
+    "parameter_budget": 100000,
+    "status": "PENDING",
+    "initial_loss": 0.0,
+    "final_loss": 0.0,
+    "steps_taken": 0,
+    "is_overfit_verified": false
+  },
+  "meta": {
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+  },
+  "error": null
+}
+```
+
+### 10.3 Tiny-Batch Overfit Command: `POST /v1/network-spec/verify-overfit`
+**Request Payload**:
+```json
+{
+  "spec_id": "01927e1f-702e-7000-8000-000000000002",
+  "max_steps": 50,
+  "target_loss_threshold": 0.08,
+  "samples": [
+    { "features": [1.0, 0.0, -1.0, 0.5], "label": 0 },
+    { "features": [0.0, 1.0, 1.0, -0.5], "label": 1 },
+    { "features": [1.2, -0.1, -0.8, 0.4], "label": 0 },
+    { "features": [-0.2, 0.9, 1.1, -0.4], "label": 1 }
+  ]
+}
+```
+
+**Response Payload (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "01927e1f-702e-7000-8000-000000000002",
+    "name": "Transformer-Telemetry-Classifier",
+    "architecture_type": "transformer",
+    "input_dim": 4,
+    "hidden_dim": 32,
+    "num_classes": 2,
+    "layer_count": 2,
+    "parameter_budget": 100000,
+    "status": "TINY_BATCH_OVERFIT_VERIFIED",
     "initial_loss": 0.7241,
     "final_loss": 0.0418,
     "steps_taken": 24,
-    "is_overfitted": true,
-    "status": "TINY_BATCH_OVERFIT_PASSED"
+    "is_overfit_verified": true
   },
   "meta": {
     "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -350,14 +428,14 @@ CREATE INDEX IF NOT EXISTS idx_neural_overfit_pipeline ON neural_overfit_runs (p
 
 ---
 
-## 10. Consequences & Trade-Offs
+## 11. Consequences & Trade-Offs
 
 ### Positive
 - **Guaranteed Zero Leakage**: Eliminates synthetic test accuracy inflation caused by trace correlation or lookahead bias.
-- **Compute Optimization & Fail-Fast Protection**: The tiny-batch gate intercepts code and tensor graph bugs within 2 seconds on CPU, preventing wasted multi-node GPU runs.
-- **Evidence-Based Justification**: Mandates that deep neural networks demonstrate clear superiority over trivial class baselines before deployment.
-- **Architectural Portability**: Clear hexagonal boundary allows swapping PyTorch for ONNX Runtime or TensorRT without altering upstream pipeline workflows.
+- **Fail-Fast Gradient Verification**: Tiny-batch overfitting intercepts graph construction and autograd errors on CPU in $< 2$ seconds.
+- **Evidence-Based Model Deployment**: Neural models are only approved if they beat empirical baseline heuristics.
+- **Single Source of Truth**: Consolidating PyTorch compute into `network_spec` maintains strict hexagonal cleanliness.
 
 ### Negative / Mitigations
-- **Initial Development Friction**: Engineers cannot experiment with model architectures until they have formulated a valid task contract and data split.
-  - *Mitigation*: The `system_telemetry_pipeline` automation handles grouping, split validation, and baseline generation automatically with zero manual SQL or custom scripting.
+- **Upfront Development Overhead**: Engineers must define task contracts and tiny batches before model training.
+  - *Mitigation*: The `PyTorchNeuralComputeAdapter` and `TrivialBaselineWorkflow` automate baseline score extraction and overfit validation without manual training loop scripting.
