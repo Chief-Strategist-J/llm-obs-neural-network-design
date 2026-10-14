@@ -1,12 +1,15 @@
-"""State machine transitions for network_spec lifecycle."""
-
-from src.shared.constants.system_constants import STATUS_PENDING, STATUS_ACTIVE, STATUS_ARCHIVED
 from src.shared.errors.app_errors import ValidationError
+
+STATUS_PENDING: str = "PENDING"
+STATUS_ACTIVE: str = "ACTIVE"
+STATUS_TINY_BATCH_OVERFIT_VERIFIED: str = "TINY_BATCH_OVERFIT_VERIFIED"
+STATUS_ARCHIVED: str = "ARCHIVED"
 
 
 class NetworkSpecMachine:
     _VALID_TRANSITIONS = {
-        STATUS_PENDING: {STATUS_ACTIVE, STATUS_ARCHIVED},
+        STATUS_PENDING: {STATUS_ACTIVE, STATUS_TINY_BATCH_OVERFIT_VERIFIED, STATUS_ARCHIVED},
+        STATUS_TINY_BATCH_OVERFIT_VERIFIED: {STATUS_ACTIVE, STATUS_ARCHIVED},
         STATUS_ACTIVE: {STATUS_ARCHIVED},
         STATUS_ARCHIVED: set(),
     }
