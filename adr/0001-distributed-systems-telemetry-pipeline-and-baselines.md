@@ -37,60 +37,7 @@ In distributed systems:
 
 The High-Level Architecture establishes a resilient, decoupled data-plane and control-plane division. Continuous telemetry ingestion is driven by an asynchronous Apache Kafka streaming bus partitioned by `trace_id` to guarantee physical causal ordering and eliminate HTTP connection overhead. Model management, tiny-batch overfit certification, and baseline configurations are served by the REST API control plane.
 
-### 3.1 High-Level Architecture Diagram (Light Theme)
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E8F0FE', 'primaryBorderColor': '#1A73E8', 'primaryTextColor': '#202124', 'lineColor': '#1A73E8', 'secondaryColor': '#CEEAD6', 'tertiaryColor': '#FEEFC3', 'mainBkg': '#FFFFFF', 'nodeBorder': '#1A73E8'}}}%%
-flowchart TD
-    subgraph INGRESS["Telemetry Producers and Ingress Plane"]
-        PROD1["Microservice Tracers / SDKs"]
-        PROD2["LLM Gateway Spans"]
-        PROD3["Worker Task Telemetry"]
-    end
-
-    subgraph STREAMING["High-Throughput Streaming Backbone (Kafka)"]
-        KAFKA_TOPIC["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal and Trace-Disjoint"]
-    end
-
-    subgraph FAST_PATH["Real-Time Anomaly Scoring (Inference Plane)"]
-        INFER_WORKER["Streaming Inference Worker"]
-        PYTORCH_ACTIVE["Active PyTorch Checkpoint\n(LayerNorm + GELU + ResBlocks)"]
-        ALERTER["Anomaly and Drift Dispatcher"]
-    end
-
-    subgraph SLOW_PATH["Continuous Learning and Self-Tuning Closed-Loop"]
-        STREAM_BUFFER["Sliding Temporal Buffer\n(Temporal Group Disjoint Partition)"]
-        SPLIT_ENGINE["TelemetrySplitRules\n(Zero-Leakage Assertion)"]
-        BASELINE_ENGINE["TrivialBaselineWorkflow\n(Majority Class Benchmark)"]
-        OVERFIT_GATE["Tiny-Batch Overfit Gate\n(Loss <= 0.08 Assertion)"]
-        TRAINER["Continuous PyTorch Retrainer\n(AdamW + Grad Clip 1.0)"]
-    end
-
-    subgraph PERSISTENCE["Operational Storage Tier"]
-        ALLOYDB["Postgres / AlloyDB Storage\n(WAL, Specs, Checkpoints, Metrics)"]
-        NEO4J["Neo4j Dependency Graph\n(Trace Causality and Service Topology)"]
-    end
-
-    PROD1 -->|Partitioned by trace_id| KAFKA_TOPIC
-    PROD2 -->|Partitioned by trace_id| KAFKA_TOPIC
-    PROD3 -->|Partitioned by trace_id| KAFKA_TOPIC
-
-    KAFKA_TOPIC -->|Consumer Group: inference-group| INFER_WORKER
-    INFER_WORKER -->|Forward Pass| PYTORCH_ACTIVE
-    PYTORCH_ACTIVE -->|Score > Threshold| ALERTER
-    INFER_WORKER -->|Inference Logs and Predictions| ALLOYDB
-
-    KAFKA_TOPIC -->|Consumer Group: training-buffer-group| STREAM_BUFFER
-    STREAM_BUFFER -->|Chronological Batches| SPLIT_ENGINE
-    SPLIT_ENGINE -->|Trace-Disjoint Splits| BASELINE_ENGINE
-    BASELINE_ENGINE -->|Empirical Scores| ALLOYDB
-    BASELINE_ENGINE -->|Passes Baseline Gate| OVERFIT_GATE
-    OVERFIT_GATE -->|Autograd Verified| TRAINER
-    TRAINER -->|Updated state_dict| ALLOYDB
-    TRAINER -.->|Hot Reload Promotion| PYTORCH_ACTIVE
-```
-
-### 3.2 High-Level Architecture Diagram (Dark Theme)
+### 3.1 High-Level Architecture Diagram
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
@@ -149,76 +96,7 @@ flowchart TD
 
 The low-level design maps hexagonal architectural boundaries across ports, adapters, pure rules, domain workflows, and storage adapters.
 
-### 3.3.1 Component Interaction and Class Topology (Light Theme)
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E1F5FE', 'primaryBorderColor': '#0288D1', 'primaryTextColor': '#01579B', 'lineColor': '#0288D1', 'secondaryColor': '#E8F5E9', 'tertiaryColor': '#FFF3E0', 'mainBkg': '#FFFFFF', 'nodeBorder': '#0288D1'}}}%%
-classDiagram
-    direction TB
-
-    class KafkaProducerPort {
-        <<interface>>
-        +produce(topic: str, key: str, value: bytes, headers: Mapping)~void~
-        +flush(timeout: float)~void~
-    }
-
-    class KafkaConsumerPort {
-        <<interface>>
-        +subscribe(topics: list[str])~void~
-        +poll(timeout: float)~object~
-        +commit(asynchronous: bool)~void~
-        +close()~void~
-    }
-
-    class KafkaConsumerAdapter {
-        -Consumer _consumer
-        -list[str] _topics
-        +subscribe(topics: list[str])~void~
-        +poll(timeout: float)~Message~
-        +commit(asynchronous: bool)~void~
-    }
-
-    class TelemetrySplitRules {
-        <<pure-function>>
-        +execute_leak_free_split(records: Sequence, train_ratio: float)~DatasetSplitResult~
-        +validate_zero_leakage(train: Sequence, val: Sequence)~bool~
-    }
-
-    class TrivialBaselineWorkflow {
-        -TelemetryPipelineRepositoryPort _repo
-        +execute_foundation_flow(ctx: TraceContext, dto: PipelineTaskSpecDTO)~TelemetryPipelineModel~
-    }
-
-    class PyTorchNeuralArchitecture {
-        -nn.Linear _input_proj
-        -nn.ModuleList _blocks
-        -nn.Linear _head
-        +forward(x: Tensor)~Tensor~
-    }
-
-    class PyTorchNeuralComputeAdapter {
-        -PyTorchNeuralArchitecture _model
-        -AdamW _optimizer
-        +fit_and_verify_overfit(spec: NetworkSpecModel, cmd: TinyBatchOverfitCommand)~TinyBatchOverfitResult~
-        +forward_eval(features: Tensor)~Tensor~
-    }
-
-    class NetworkSpecService {
-        -NetworkSpecRepositoryPort _repo
-        -NeuralComputePort _compute
-        +create_network_spec(ctx: TraceContext, dto: NetworkSpecCreateDTO)~Result~
-        +verify_tiny_batch_overfit(ctx: TraceContext, cmd: TinyBatchOverfitCommand)~Result~
-    }
-
-    KafkaConsumerPort <|.. KafkaConsumerAdapter : implements
-    KafkaProducerPort <|.. KafkaProducerAdapter : implements
-    TelemetryPipelineService --> TelemetrySplitRules : calls
-    TelemetryPipelineService --> TrivialBaselineWorkflow : delegates
-    NetworkSpecService --> PyTorchNeuralComputeAdapter : orchestrates
-    PyTorchNeuralComputeAdapter --> PyTorchNeuralArchitecture : computes
-```
-
-### 3.3.2 Component Interaction and Class Topology (Dark Theme)
+### 3.3.1 Component Interaction and Class Topology
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1E293B', 'primaryBorderColor': '#38BDF8', 'primaryTextColor': '#F1F5F9', 'lineColor': '#38BDF8', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#0F172A', 'nodeBorder': '#38BDF8'}}}%%
@@ -341,30 +219,8 @@ sequenceDiagram
 
 The end-to-end learning loop operates as a closed cybernetic system where telemetry streams flow through continuous evaluation, and validation metrics directly govern the training and data selection phases.
 
-### 4.1 End-to-End Pipeline Diagram (Light Theme)
+### 4.1 End-to-End Pipeline Diagram
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E8F0FE', 'primaryBorderColor': '#1A73E8', 'primaryTextColor': '#202124', 'lineColor': '#1A73E8', 'secondaryColor': '#CEEAD6', 'tertiaryColor': '#FEEFC3', 'mainBkg': '#FFFFFF', 'nodeBorder': '#1A73E8'}}}%%
-flowchart TD
-    PROBLEM["Problem Definition and Success Criteria"] --> DATA_COLLECT["Data Ingestion and Sanitization"]
-    DATA_COLLECT --> CAUSAL_SPLIT["Causal Split (Train, Val, Test)"]
-    CAUSAL_SPLIT --> PREPROCESS["Preprocessing and Z-Score Scaling"]
-    PREPROCESS --> DATALOADER["Streaming DataLoader"]
-    DATALOADER --> MODEL["Model (Embeddings, Residual Blocks, Head)"]
-    MODEL --> LOSS["Loss Function (Cross-Entropy and Focal Loss)"]
-    LOSS -->|Backpropagation Gradients| OPTIMIZER["Optimizer (AdamW) and LR Schedule and Regularization"]
-    OPTIMIZER -->|Weight Tensor Update| MODEL
-    MODEL --> VALIDATION["Validation Loop and Metrics Evaluation"]
-    VALIDATION --> ERROR_ANALYSIS["Error and Drift Analysis"]
-    ERROR_ANALYSIS -->|Feedback to Data and Loss Objectives| DATA_COLLECT
-    VALIDATION --> CHECKPOINT["Model Checkpointing"]
-    CHECKPOINT --> HELD_OUT_TEST["Held-Out Test (Executed Once)"]
-    HELD_OUT_TEST --> SERVING["Production Serving and Anomaly Inference"]
-    SERVING --> DRIFT_MONITOR["Online Drift and Incident Monitoring"]
-    DRIFT_MONITOR -->|Autonomous Retrain Trigger| DATA_COLLECT
-```
-
-### 4.2 End-to-End Pipeline Diagram (Dark Theme)
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%

@@ -6,10 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "python-shared",
-    "fastapi>=0.100.0",
-    "uvicorn>=0.22.0",
     "torch>=2.0.0",
-    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
