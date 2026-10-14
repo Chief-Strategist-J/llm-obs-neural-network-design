@@ -7,28 +7,30 @@ Execution Workflow:
 """
 
 from __future__ import annotations
-import json
 import logging
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 from src.shared.ports.kafka_port import KafkaProducerPort, KafkaConsumerPort
 
 logger = logging.getLogger(__name__)
 
 try:
-    from confluent_kafka import Producer as ConfluentProducer, Consumer as ConfluentConsumer, Message as ConfluentMessage
+    from confluent_kafka import Producer as ConfluentProducer, Consumer as ConfluentConsumer
 except ImportError:
     ConfluentProducer = None
     ConfluentConsumer = None
-    ConfluentMessage = None
 
 
 class KafkaProducerAdapter(KafkaProducerPort):
-    def __init__(self, bootstrap_servers: str = "localhost:9092") -> None:
+    def __init__(
+        self,
+        bootstrap_servers: str = "localhost:9092",
+        producer_instance: Any = None,
+    ) -> None:
         self._bootstrap_servers = bootstrap_servers
         self._producer = (
-            ConfluentProducer({"bootstrap.servers": bootstrap_servers})
-            if ConfluentProducer
-            else None
+            producer_instance
+            if producer_instance is not None
+            else (ConfluentProducer({"bootstrap.servers": bootstrap_servers}) if ConfluentProducer else None)
         )
         self._in_memory_log: list[dict[str, Any]] = []
 
@@ -60,20 +62,25 @@ class KafkaConsumerAdapter(KafkaConsumerPort):
         self,
         group_id: str = "neural-network-telemetry-group",
         bootstrap_servers: str = "localhost:9092",
+        consumer_instance: Any = None,
     ) -> None:
         self._group_id = group_id
         self._bootstrap_servers = bootstrap_servers
         self._consumer = (
-            ConfluentConsumer(
-                {
-                    "bootstrap.servers": bootstrap_servers,
-                    "group.id": group_id,
-                    "auto.offset.reset": "earliest",
-                    "enable.auto.commit": False,
-                }
+            consumer_instance
+            if consumer_instance is not None
+            else (
+                ConfluentConsumer(
+                    {
+                        "bootstrap.servers": bootstrap_servers,
+                        "group.id": group_id,
+                        "auto.offset.reset": "earliest",
+                        "enable.auto.commit": False,
+                    }
+                )
+                if ConfluentConsumer
+                else None
             )
-            if ConfluentConsumer
-            else None
         )
         self._subscribed_topics: list[str] = []
 
