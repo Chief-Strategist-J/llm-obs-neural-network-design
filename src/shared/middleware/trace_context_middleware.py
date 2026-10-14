@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from python_shared.http.constants import HTTP_CONSTANTS
+from python_shared.http.utils import extract_or_generate_correlation_id
 from src.shared.types.envelope_types import TraceContext
 from src.shared.utils.date_utils import generate_uuidv7_str
 
@@ -24,10 +25,7 @@ class TraceContextMiddleware(BaseHTTPMiddleware):
             request.headers.get(HTTP_CONSTANTS.HEADER_X_REQUEST_ID)
             or generate_uuidv7_str()
         )
-        correlation_id = (
-            request.headers.get(HTTP_CONSTANTS.HEADER_X_CORRELATION_ID)
-            or request_id
-        )
+        correlation_id = extract_or_generate_correlation_id(dict(request.headers))
 
         trace_id = traceparent.split("-")[1] if len(traceparent.split("-")) > 1 else traceparent
         request.state.trace_context = TraceContext(trace_id=trace_id, span_id=request_id)
