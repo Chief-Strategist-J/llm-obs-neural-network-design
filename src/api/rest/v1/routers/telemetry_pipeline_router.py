@@ -14,8 +14,10 @@ _pipeline_service = TelemetryPipelineService(repository=_pipeline_repo)
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def initialize_pipeline(request: Request, response: Response):
-    trace_id = request.headers.get("traceparent", "trace-synthetic-001")
-    ctx = TraceContext(trace_id=trace_id)
+    ctx = getattr(request.state, "trace_context", None) or TraceContext(
+        trace_id=request.headers.get("traceparent", "trace-synthetic-001")
+    )
+    trace_id = ctx.trace_id
     try:
         payload = await request.json()
         dto = TelemetryPipelineSchema.from_api(payload)

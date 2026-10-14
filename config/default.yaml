@@ -5,6 +5,8 @@ app:
 routes:
   health: "/health"
   network_spec: "/v1/network-spec"
+  network_spec_verify_overfit: "/v1/network-spec/verify-overfit"
+  telemetry_pipeline: "/v1/telemetry-pipeline"
 database:
   pool_size: 10
   timeout_ms: 5000

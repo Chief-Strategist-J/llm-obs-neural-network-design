@@ -6,6 +6,8 @@ from src.features.network_spec.service.network_spec_service import NetworkSpecSe
 from src.features.network_spec.repository.network_spec_repository import InMemoryNetworkSpecRepository
 from src.features.network_spec.repository.neural_compute_adapter import PyTorchNeuralComputeAdapter
 
+from src.infra.config.config_loader import AppConfig
+
 router = APIRouter(prefix="/v1/network-spec", tags=["network-spec"])
 
 _repo = InMemoryNetworkSpecRepository()
@@ -17,8 +19,9 @@ _handler = NetworkSpecHandler(service=_service)
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_network_spec(request: Request, response: Response):
     payload = await request.json()
-    trace_id = request.headers.get("traceparent", "trace-synthetic-001")
-    ctx = TraceContext(trace_id=trace_id)
+    ctx = getattr(request.state, "trace_context", None) or TraceContext(
+        trace_id=request.headers.get("traceparent", "trace-synthetic-001")
+    )
     status_code, result = await _handler.handle_create_spec(ctx, payload)
     response.status_code = status_code
     return {
@@ -32,8 +35,9 @@ async def create_network_spec(request: Request, response: Response):
 @router.post("/verify-overfit", status_code=status.HTTP_200_OK)
 async def verify_overfit(request: Request, response: Response):
     payload = await request.json()
-    trace_id = request.headers.get("traceparent", "trace-synthetic-001")
-    ctx = TraceContext(trace_id=trace_id)
+    ctx = getattr(request.state, "trace_context", None) or TraceContext(
+        trace_id=request.headers.get("traceparent", "trace-synthetic-001")
+    )
     status_code, result = await _handler.handle_verify_overfit(ctx, payload)
     response.status_code = status_code
     return {
