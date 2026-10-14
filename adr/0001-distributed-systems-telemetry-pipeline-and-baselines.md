@@ -35,13 +35,267 @@ In distributed systems:
 
 ## 3. High-Level Architecture (HLD)
 
-The sequence diagram below illustrates the end-to-end execution flow across the two consolidated features: `system_telemetry_pipeline` (leak-free split & trivial baseline) and `network_spec` (PyTorch residual architecture, tiny-batch overfit, and autonomous self-learning closed loop):
+The High-Level Architecture establishes a resilient, decoupled data-plane and control-plane division. Continuous telemetry ingestion is driven by an asynchronous Apache Kafka streaming bus partitioned by `trace_id` to guarantee physical causal ordering and eliminate HTTP connection overhead. Model management, tiny-batch overfit certification, and baseline configurations are served by the REST API control plane.
+
+### 3.1 High-Level Architecture Diagram (Light Theme)
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E8F0FE', 'primaryBorderColor': '#1A73E8', 'primaryTextColor': '#202124', 'lineColor': '#1A73E8', 'secondaryColor': '#CEEAD6', 'tertiaryColor': '#FEEFC3', 'mainBkg': '#FFFFFF', 'nodeBorder': '#1A73E8'}}}%%
+flowchart TD
+    subgraph INGRESS["Telemetry Producers & Ingress Plane"]
+        PROD1["Microservice Tracers / SDKs"]
+        PROD2["LLM Gateway Spans"]
+        PROD3["Worker Task Telemetry"]
+    end
+
+    subgraph STREAMING["High-Throughput Streaming Backbone (Kafka)"]
+        KAFKA_TOPIC["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal & Trace-Disjoint"]
+    end
+
+    subgraph FAST_PATH["Real-Time Anomaly Scoring (Inference Plane)"]
+        INFER_WORKER["Streaming Inference Worker"]
+        PYTORCH_ACTIVE["Active PyTorch Checkpoint\n(LayerNorm + GELU + ResBlocks)"]
+        ALERTER["Anomaly & Drift Dispatcher"]
+    end
+
+    subgraph SLOW_PATH["Continuous Learning & Self-Tuning Closed-Loop"]
+        STREAM_BUFFER["Sliding Temporal Buffer\n(Temporal Group Disjoint Partition)"]
+        SPLIT_ENGINE["TelemetrySplitRules\n(Zero-Leakage Assertion)"]
+        BASELINE_ENGINE["TrivialBaselineWorkflow\n(Majority Class Benchmark)"]
+        OVERFIT_GATE["Tiny-Batch Overfit Gate\n(Loss <= 0.08 Assertion)"]
+        TRAINER["Continuous PyTorch Retrainer\n(AdamW + Grad Clip 1.0)"]
+    end
+
+    subgraph PERSISTENCE["Operational Storage Tier"]
+        ALLOYDB["Postgres / AlloyDB Storage\n(WAL, Specs, Checkpoints, Metrics)"]
+        NEO4J["Neo4j Dependency Graph\n(Trace Causality & Service Topology)"]
+    end
+
+    PROD1 -->|Partitioned by trace_id| KAFKA_TOPIC
+    PROD2 -->|Partitioned by trace_id| KAFKA_TOPIC
+    PROD3 -->|Partitioned by trace_id| KAFKA_TOPIC
+
+    KAFKA_TOPIC -->|Consumer Group: inference-group| INFER_WORKER
+    INFER_WORKER -->|Forward Pass| PYTORCH_ACTIVE
+    PYTORCH_ACTIVE -->|Score > Threshold| ALERTER
+    INFER_WORKER -->|Inference Logs & Predictions| ALLOYDB
+
+    KAFKA_TOPIC -->|Consumer Group: training-buffer-group| STREAM_BUFFER
+    STREAM_BUFFER -->|Chronological Batches| SPLIT_ENGINE
+    SPLIT_ENGINE -->|Trace-Disjoint Splits| BASELINE_ENGINE
+    BASELINE_ENGINE -->|Empirical Scores| ALLOYDB
+    BASELINE_ENGINE -->|Passes Baseline Gate| OVERFIT_GATE
+    OVERFIT_GATE -->|Autograd Verified| TRAINER
+    TRAINER -->|Updated state_dict| ALLOYDB
+    TRAINER -.->|Hot Reload Promotion| PYTORCH_ACTIVE
+```
+
+### 3.2 High-Level Architecture Diagram (Dark Theme)
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
+flowchart TD
+    subgraph INGRESS_DARK["Telemetry Producers & Ingress Plane"]
+        D_PROD1["Microservice Tracers / SDKs"]
+        D_PROD2["LLM Gateway Spans"]
+        D_PROD3["Worker Task Telemetry"]
+    end
+
+    subgraph STREAMING_DARK["High-Throughput Streaming Backbone (Kafka)"]
+        D_KAFKA["Kafka Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Causal & Trace-Disjoint"]
+    end
+
+    subgraph FAST_PATH_DARK["Real-Time Anomaly Scoring (Inference Plane)"]
+        D_INFER["Streaming Inference Worker"]
+        D_PYTORCH["Active PyTorch Checkpoint\n(LayerNorm + GELU + ResBlocks)"]
+        D_ALERTER["Anomaly & Drift Dispatcher"]
+    end
+
+    subgraph SLOW_PATH_DARK["Continuous Learning & Self-Tuning Closed-Loop"]
+        D_BUFFER["Sliding Temporal Buffer\n(Temporal Group Disjoint Partition)"]
+        D_SPLIT["TelemetrySplitRules\n(Zero-Leakage Assertion)"]
+        D_BASELINE["TrivialBaselineWorkflow\n(Majority Class Benchmark)"]
+        D_OVERFIT["Tiny-Batch Overfit Gate\n(Loss <= 0.08 Assertion)"]
+        D_TRAINER["Continuous PyTorch Retrainer\n(AdamW + Grad Clip 1.0)"]
+    end
+
+    subgraph PERSISTENCE_DARK["Operational Storage Tier"]
+        D_ALLOYDB["Postgres / AlloyDB Storage\n(WAL, Specs, Checkpoints, Metrics)"]
+        D_NEO4J["Neo4j Dependency Graph\n(Trace Causality & Service Topology)"]
+    end
+
+    D_PROD1 -->|Partitioned by trace_id| D_KAFKA
+    D_PROD2 -->|Partitioned by trace_id| D_KAFKA
+    D_PROD3 -->|Partitioned by trace_id| D_KAFKA
+
+    D_KAFKA -->|Consumer Group: inference-group| D_INFER
+    D_INFER -->|Forward Pass| D_PYTORCH
+    D_PYTORCH -->|Score > Threshold| D_ALERTER
+    D_INFER -->|Inference Logs & Predictions| D_ALLOYDB
+
+    D_KAFKA -->|Consumer Group: training-buffer-group| D_BUFFER
+    D_BUFFER -->|Chronological Batches| D_SPLIT
+    D_SPLIT -->|Trace-Disjoint Splits| D_BASELINE
+    D_BASELINE -->|Empirical Scores| D_ALLOYDB
+    D_BASELINE -->|Passes Baseline Gate| D_OVERFIT
+    D_OVERFIT -->|Autograd Verified| D_TRAINER
+    D_TRAINER -->|Updated state_dict| D_ALLOYDB
+    D_TRAINER -.->|Hot Reload Promotion| D_PYTORCH
+```
+
+---
+
+## 3.3 Low-Level Architecture (LLD) & Subsystem Internals
+
+The low-level design maps hexagonal architectural boundaries across ports, adapters, pure rules, domain workflows, and storage adapters.
+
+### 3.3.1 Component Interaction & Class Topology (Light Theme)
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#E1F5FE', 'primaryBorderColor': '#0288D1', 'primaryTextColor': '#01579B', 'lineColor': '#0288D1', 'secondaryColor': '#E8F5E9', 'tertiaryColor': '#FFF3E0', 'mainBkg': '#FFFFFF', 'nodeBorder': '#0288D1'}}}%%
+classDiagram
+    direction TB
+
+    class KafkaProducerPort {
+        <<interface>>
+        +produce(topic: str, key: str, value: bytes, headers: Mapping)~void~
+        +flush(timeout: float)~void~
+    }
+
+    class KafkaConsumerPort {
+        <<interface>>
+        +subscribe(topics: list[str])~void~
+        +poll(timeout: float)~object~
+        +commit(asynchronous: bool)~void~
+        +close()~void~
+    }
+
+    class KafkaConsumerAdapter {
+        -Consumer _consumer
+        -list[str] _topics
+        +subscribe(topics: list[str])~void~
+        +poll(timeout: float)~Message~
+        +commit(asynchronous: bool)~void~
+    }
+
+    class TelemetrySplitRules {
+        <<pure-function>>
+        +execute_leak_free_split(records: Sequence, train_ratio: float)~DatasetSplitResult~
+        +validate_zero_leakage(train: Sequence, val: Sequence)~bool~
+    }
+
+    class TrivialBaselineWorkflow {
+        -TelemetryPipelineRepositoryPort _repo
+        +execute_foundation_flow(ctx: TraceContext, dto: PipelineTaskSpecDTO)~TelemetryPipelineModel~
+    }
+
+    class PyTorchNeuralArchitecture {
+        -nn.Linear _input_proj
+        -nn.ModuleList _blocks
+        -nn.Linear _head
+        +forward(x: Tensor)~Tensor~
+    }
+
+    class PyTorchNeuralComputeAdapter {
+        -PyTorchNeuralArchitecture _model
+        -AdamW _optimizer
+        +fit_and_verify_overfit(spec: NetworkSpecModel, cmd: TinyBatchOverfitCommand)~TinyBatchOverfitResult~
+        +forward_eval(features: Tensor)~Tensor~
+    }
+
+    class NetworkSpecService {
+        -NetworkSpecRepositoryPort _repo
+        -NeuralComputePort _compute
+        +create_network_spec(ctx: TraceContext, dto: NetworkSpecCreateDTO)~Result~
+        +verify_tiny_batch_overfit(ctx: TraceContext, cmd: TinyBatchOverfitCommand)~Result~
+    }
+
+    KafkaConsumerPort <|.. KafkaConsumerAdapter : implements
+    KafkaProducerPort <|.. KafkaProducerAdapter : implements
+    TelemetryPipelineService --> TelemetrySplitRules : calls
+    TelemetryPipelineService --> TrivialBaselineWorkflow : delegates
+    NetworkSpecService --> PyTorchNeuralComputeAdapter : orchestrates
+    PyTorchNeuralComputeAdapter --> PyTorchNeuralArchitecture : computes
+```
+
+### 3.3.2 Component Interaction & Class Topology (Dark Theme)
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1E293B', 'primaryBorderColor': '#38BDF8', 'primaryTextColor': '#F1F5F9', 'lineColor': '#38BDF8', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#0F172A', 'nodeBorder': '#38BDF8'}}}%%
+classDiagram
+    direction TB
+
+    class KafkaProducerPort {
+        <<interface>>
+        +produce(topic: str, key: str, value: bytes, headers: Mapping)~void~
+        +flush(timeout: float)~void~
+    }
+
+    class KafkaConsumerPort {
+        <<interface>>
+        +subscribe(topics: list[str])~void~
+        +poll(timeout: float)~object~
+        +commit(asynchronous: bool)~void~
+        +close()~void~
+    }
+
+    class KafkaConsumerAdapter {
+        -Consumer _consumer
+        -list[str] _topics
+        +subscribe(topics: list[str])~void~
+        +poll(timeout: float)~Message~
+        +commit(asynchronous: bool)~void~
+    }
+
+    class TelemetrySplitRules {
+        <<pure-function>>
+        +execute_leak_free_split(records: Sequence, train_ratio: float)~DatasetSplitResult~
+        +validate_zero_leakage(train: Sequence, val: Sequence)~bool~
+    }
+
+    class TrivialBaselineWorkflow {
+        -TelemetryPipelineRepositoryPort _repo
+        +execute_foundation_flow(ctx: TraceContext, dto: PipelineTaskSpecDTO)~TelemetryPipelineModel~
+    }
+
+    class PyTorchNeuralArchitecture {
+        -nn.Linear _input_proj
+        -nn.ModuleList _blocks
+        -nn.Linear _head
+        +forward(x: Tensor)~Tensor~
+    }
+
+    class PyTorchNeuralComputeAdapter {
+        -PyTorchNeuralArchitecture _model
+        -AdamW _optimizer
+        +fit_and_verify_overfit(spec: NetworkSpecModel, cmd: TinyBatchOverfitCommand)~TinyBatchOverfitResult~
+        +forward_eval(features: Tensor)~Tensor~
+    }
+
+    class NetworkSpecService {
+        -NetworkSpecRepositoryPort _repo
+        -NeuralComputePort _compute
+        +create_network_spec(ctx: TraceContext, dto: NetworkSpecCreateDTO)~Result~
+        +verify_tiny_batch_overfit(ctx: TraceContext, cmd: TinyBatchOverfitCommand)~Result~
+    }
+
+    KafkaConsumerPort <|.. KafkaConsumerAdapter : implements
+    KafkaProducerPort <|.. KafkaProducerAdapter : implements
+    TelemetryPipelineService --> TelemetrySplitRules : calls
+    TelemetryPipelineService --> TrivialBaselineWorkflow : delegates
+    NetworkSpecService --> PyTorchNeuralComputeAdapter : orchestrates
+    PyTorchNeuralComputeAdapter --> PyTorchNeuralArchitecture : computes
+```
+
+---
+
+## 3.4 Ingress Execution Flow & End-to-End Sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Client as Telemetry Ingress / Pipeline Client
-    participant PipelineRouter as TelemetryRouter / Handler
+    participant Kafka as Kafka Bus (telemetry.spans.raw)
     participant PipelineService as TelemetryPipelineService
     participant SplitRules as TelemetrySplitRules (Pure Logic)
     participant BaselineFlow as TrivialBaselineWorkflow
@@ -50,10 +304,10 @@ sequenceDiagram
     participant DB as Postgres / AlloyDB Cluster
     participant OTEL as OpenTelemetry Collector
 
-    Note over Client,OTEL: Step 1: Ingest Data, Assert Zero-Leakage & Benchmark Trivial Baseline
-    Client->>PipelineRouter: POST /v1/telemetry-pipeline (Records, TaskSpec, TrainRatio)
-    PipelineRouter->>OTEL: Start Root Span ("telemetry_pipeline.initialize", W3C traceparent)
-    PipelineRouter->>PipelineService: Dispatch PipelineTaskSpecDTO
+    Note over Client,OTEL: Step 1: High-Throughput Streaming & Zero-Leakage Split
+    Client->>Kafka: Produce telemetry records (Key: trace_id)
+    Kafka-->>PipelineService: Stream consumption micro-batch
+    PipelineService->>OTEL: Start Root Span ("telemetry_pipeline.consume")
     
     PipelineService->>SplitRules: execute_leak_free_split(records, train_ratio)
     Note over SplitRules: Group by trace_id & sort chronologically.<br/>Assert: TrainTraces ∩ ValTraces = ∅<br/>Assert: max(TrainTs) <= min(ValTs)
@@ -63,8 +317,7 @@ sequenceDiagram
     Note over BaselineFlow: Compute Empirical Prior & Majority Class.<br/>Evaluate Accuracy, Precision, Recall, F1 on Val split.
     BaselineFlow-->>PipelineService: BaselineEvaluationResult
     PipelineService->>DB: INSERT INTO telemetry_pipeline_records & baseline_benchmarks
-    PipelineService-->>PipelineRouter: Result.ok(TelemetryPipelineModel)
-    PipelineRouter-->>Client: 201 Created (Baseline benchmark score established)
+    PipelineService-->>Kafka: Commit offset asynchronously
 
     Note over Client,OTEL: Step 2: Initialize PyTorch Network & Verify Tiny-Batch Overfit
     Client->>SpecService: verify_tiny_batch_overfit(TinyBatchOverfitCommand)
@@ -77,9 +330,8 @@ sequenceDiagram
     SpecService->>OTEL: Set Span Status OK & End Span
 
     Note over Client,OTEL: Step 3: Production Serving & Autonomous Self-Learning Closed-Loop
-    Client->>SpecService: Inbound Production Inference (Telemetry Vector x)
-    SpecService->>PyTorchAdapter: forward(x) -> Prediction Logits
-    SpecService-->>Client: Inference Prediction (Anomaly / Outage Probability)
+    Kafka->>PyTorchAdapter: Online Telemetry Vector x
+    PyTorchAdapter-->>Client: Inference Prediction (Anomaly / Outage Probability)
     Note over SpecService,DB: Error Analysis & Drift Engine detects discrepancy or false positive.<br/>Failure records appended to active telemetry pool.<br/>Triggers automatic retraining workflow when drift threshold is exceeded.
 ```
 

@@ -13,3 +13,7 @@ CODE_NOT_FOUND: str = "RESOURCE_NOT_FOUND"
 CODE_INTERNAL_ERROR: str = "INTERNAL_SERVER_ERROR"
 
 TOPIC_SPEC_CREATED: str = "neural-network.spec-created.v1"
+TOPIC_TELEMETRY_SPANS_RAW: str = "llm-obs.telemetry.spans.raw.v1"
+TOPIC_TELEMETRY_DRIFT_ALERTS: str = "llm-obs.telemetry.drift-alerts.v1"
+TOPIC_MODEL_RETRAIN_COMMANDS: str = "llm-obs.neural.retrain-commands.v1"
+

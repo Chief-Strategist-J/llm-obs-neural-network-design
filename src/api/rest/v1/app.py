@@ -22,6 +22,9 @@ def create_app() -> FastAPI:
     async def health_check():
         return {"status": "ok"}
 
+    from src.shared.middleware.error_envelope_middleware import ErrorEnvelopeMiddleware
+    app.add_middleware(ErrorEnvelopeMiddleware)
+
     app.include_router(network_spec_router)
     app.include_router(telemetry_pipeline_router)
     return app
