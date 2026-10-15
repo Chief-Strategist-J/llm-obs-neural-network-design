@@ -58,9 +58,9 @@ flowchart TD
         ZSCORE_NORM --> DEAD_MASK
     end
     
-    DISPATCHER -->|1. Fit on Train Split| FIT_PHASE
-    PROFILE -->|2. Supply Locked (mu, sigma) Parameters| TRANSFORM_PHASE
-    DISPATCHER -->|3. Transform Train and Val Splits| TRANSFORM_PHASE
+    DISPATCHER -->|"1. Fit on Train Split"| FIT_PHASE
+    PROFILE -->|"2. Supply Locked (mu, sigma) Parameters"| TRANSFORM_PHASE
+    DISPATCHER -->|"3. Transform Train and Val Splits"| TRANSFORM_PHASE
     TRANSFORM_PHASE --> CLEANED["Cleaned Finite Tensors (CleanedSampleDTO)"]
     CLEANED --> TENSOR_ENGINE["PyTorch Neural Tensor Core"]
 ```

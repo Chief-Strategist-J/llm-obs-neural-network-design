@@ -61,21 +61,21 @@ flowchart TD
         STORAGE["StreamingTelemetryWorkerRepository\n(Micro-Batches / DLQ Log / Metrics)"]
     end
 
-    P1 -->|Produce with trace_id| K_RAW
-    P2 -->|Produce with trace_id| K_RAW
-    P3 -->|Produce with trace_id| K_RAW
+    P1 -->|"Produce with trace_id"| K_RAW
+    P2 -->|"Produce with trace_id"| K_RAW
+    P3 -->|"Produce with trace_id"| K_RAW
 
-    K_RAW -->|poll| W_CONS
+    K_RAW -->|"poll"| W_CONS
     W_CONS --> W_PIPE
     W_PIPE --> W_RULE
 
-    W_RULE -->|Valid Span| W_BUFF
-    W_RULE -->|Corrupt / Invalid| W_PROD
-    W_PROD -->|Produce dlq payload| K_DLQ
+    W_RULE -->|"Valid Span"| W_BUFF
+    W_RULE -->|"Corrupt or Invalid"| W_PROD
+    W_PROD -->|"Produce dlq payload"| K_DLQ
 
-    W_BUFF -->|Capacity >= 100 or Elapsed >= 1000ms| STORAGE
-    STORAGE -->|Batch records| T1_FAST
-    STORAGE -.->|Offline training split| T2_SLOW
+    W_BUFF -->|"Capacity >= 100 or Elapsed >= 1000ms"| STORAGE
+    STORAGE -->|"Batch records"| T1_FAST
+    STORAGE -.->|"Offline training split"| T2_SLOW
 ```
 
 ---
@@ -227,7 +227,91 @@ Where $M$ is the number of distinct `trace_id` instances in micro-batch $\mathca
 
 ---
 
+### 6.3 Business System Topology ASCII Tree
+
+```text
++----------------------------------------------------------------------------------------+
+|                      STREAMING TELEMETRY WORKER SUBSYSTEM                              |
++----------------------------------------------------------------------------------------+
+|                                                                                        |
+|  [ Kafka Streaming Topic: telemetry.spans.raw.v1 ] (Keyed by trace_id)                 |
+|                            |                                                           |
+|                            v                                                           |
+|  [ KafkaConsumerAdapter ] (Consumer Group: neural-network-telemetry-group)             |
+|                            |                                                           |
+|                            +---> [ ConsumerMiddlewarePipeline ]                        |
+|                                       |                                                |
+|                                       +---> with_tracing_consumer (W3C traceparent)    |
+|                                       +---> with_dlq_on_failure (Error Interceptor)    |
+|                                       |                                                |
+|                                       v                                                |
+|                     [ StreamingTelemetryWorkerService ]                                |
+|                                       |                                                |
+|             +-------------------------+-------------------------+                      |
+|             |                                                   |                      |
+|             v (Validation OK)                                   v (Malformed / Corrupt)|
+|  [ parse_telemetry_span ]                             [ build_dead_letter_message ]    |
+|             |                                                   |                      |
+|             v                                                   v                      |
+|  [ Micro-Batch Buffer ]                               [ KafkaProducerAdapter ]         |
+|  (Capacity: 100 | Timeout: 1s)                                  |                      |
+|             |                                                   v                      |
+|             v (Condition Met)                         [ Topic: telemetry.spans.dlq ]   |
+|  [ build_micro_batch ]                                                                 |
+|             |                                                                          |
+|             +---> [ InMemoryStreamingTelemetryWorkerRepository ]                       |
+|             |                                                                          |
+|             +---> [ Fast-Path Gating: StreamingBaselineService (EWMA / CUSUM) ]        |
+|             |                                                                          |
+|             v                                                                          |
+|  [ KafkaConsumerAdapter.commit(async=True) ]                                           |
+|                                                                                        |
++----------------------------------------------------------------------------------------+
+```
+
 ---
+
+### 6.4 Synchronous & Asynchronous Function Call Stack
+
+```text
+StreamingTelemetryWorkerService.poll_and_dispatch_cycle(ctx, max_records=10)
+  |
+  +-- Tracer.start_span("streaming_telemetry_worker.poll_and_dispatch")
+  |
+  +-- KafkaConsumerAdapter.poll(timeout=0.05)
+  |     +-- ConfluentConsumer.poll(timeout=0.05) / MockConsumer.poll()
+  |
+  +-- [LOOP for each message in batch]
+  |     |
+  |     +-- StreamingTelemetryWorkerService.process_raw_message(ctx, topic, partition, offset, payload, headers)
+  |           |
+  |           +-- Tracer.start_span("streaming_telemetry_worker.process_message")
+  |           |
+  |           +-- streaming_telemetry_worker_rules.parse_telemetry_span(payload)
+  |           |     +-- json.loads(payload)
+  |           |     +-- Schema bounds check: span_id, trace_id, features
+  |           |
+  |           +-- [BRANCH: Valid Span]
+  |           |     +-- Buffer.append(TelemetrySpanMessageDTO)
+  |           |     +-- StreamingTelemetryWorkerService._sync_metrics()
+  |           |
+  |           +-- [BRANCH: Malformed / Poison-Pill Span]
+  |                 +-- streaming_telemetry_worker_rules.build_dead_letter_message(...)
+  |                 +-- StreamingTelemetryWorkerRepository.save_dead_letter(dlq)
+  |                 +-- KafkaProducerAdapter.produce(topic="telemetry.spans.dlq", key=dlq_id, value=dlq_bytes)
+  |                 +-- StreamingTelemetryWorkerService._sync_metrics()
+  |
+  +-- StreamingTelemetryWorkerService.flush_buffer(ctx, force=False)
+  |     |
+  |     +-- streaming_telemetry_worker_rules.should_flush_buffer(current_size, batch_size, elapsed_ms, timeout_ms)
+  |     |
+  |     +-- [BRANCH: Flush Condition True]
+  |           +-- streaming_telemetry_worker_rules.build_micro_batch(batch_id, created_at, spans)
+  |           +-- StreamingTelemetryWorkerRepository.save_micro_batch(micro_batch)
+  |           +-- StreamingTelemetryWorkerService._sync_metrics()
+  |
+  +-- KafkaConsumerAdapter.commit(asynchronous=True)
+```
 
 ## 7. Algorithmic Pseudocode and Operational Workflows
 

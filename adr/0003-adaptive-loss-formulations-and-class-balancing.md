@@ -57,9 +57,9 @@ flowchart TD
         CB --> BACKPROP
     end
     
-    DISPATCHER -->|1. Compute Class Counts| CALC_PHASE
-    PROFILE -->|2. Injected Weights| MODULE_PHASE
-    SAMPLES -->|3. Batched Tensors (X, Y)| MODULE_PHASE
+    DISPATCHER -->|"1. Compute Class Counts"| CALC_PHASE
+    PROFILE -->|"2. Injected Weights"| MODULE_PHASE
+    SAMPLES -->|"3. Batched Tensors (X, Y)"| MODULE_PHASE
     BACKPROP --> OPTIMIZER["AdamW Parameter Optimization"]
 ```
 

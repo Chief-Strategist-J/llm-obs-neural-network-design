@@ -49,9 +49,9 @@ flowchart TD
     
     FILTER --> TIER1
     
-    DECISION -->|Decision: BENIGN (|z| <= 1.5)| FAST_DROP["Direct Fast-Path Exit (Bypass Neural Core)"]
-    DECISION -->|Decision: ANOMALOUS (|z| > 4.0 or CUSUM Spike)| FAST_ALERT["Instant Deterministic Alert (Bypass Neural Core)"]
-    DECISION -->|Decision: AMBIGUOUS (1.5 < |z| <= 4.0)| TIER2["Tier 2: Deep Contextual Reasoner (PyTorch Tensor Engine)"]
+    DECISION -->|"Decision: BENIGN (abs(z) <= 1.5)"| FAST_DROP["Direct Fast-Path Exit (Bypass Neural Core)"]
+    DECISION -->|"Decision: ANOMALOUS (abs(z) > 4.0 or CUSUM Spike)"| FAST_ALERT["Instant Deterministic Alert (Bypass Neural Core)"]
+    DECISION -->|"Decision: AMBIGUOUS (1.5 < abs(z) <= 4.0)"| TIER2["Tier 2: Deep Contextual Reasoner (PyTorch Tensor Engine)"]
 ```
 
 ---
