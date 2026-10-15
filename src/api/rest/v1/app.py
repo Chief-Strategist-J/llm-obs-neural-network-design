@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.api.rest.v1.routers.network_spec_router import router as network_spec_router
 from src.api.rest.v1.routers.telemetry_pipeline_router import router as telemetry_pipeline_router
+from src.api.rest.v1.routers.data_sanitization_router import router as data_sanitization_router
 from src.infra.observability.tracer import Tracer
 
 
@@ -31,7 +32,9 @@ def create_app() -> FastAPI:
 
     app.include_router(network_spec_router)
     app.include_router(telemetry_pipeline_router)
+    app.include_router(data_sanitization_router)
     return app
+
 
 
 app = create_app()

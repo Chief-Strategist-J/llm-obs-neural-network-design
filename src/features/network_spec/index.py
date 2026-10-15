@@ -4,6 +4,8 @@ from src.features.network_spec.types.network_spec_types import (
     NetworkSpecModel,
     TelemetrySampleDTO,
     TinyBatchOverfitCommand,
+    DatasetTrainingCommand,
+    DatasetTrainingResult,
 )
 from src.features.network_spec.schema.network_spec_schema import NetworkSpecSchema
 from src.features.network_spec.repository.network_spec_repository import (
@@ -21,6 +23,8 @@ __all__ = [
     "NetworkSpecModel",
     "TelemetrySampleDTO",
     "TinyBatchOverfitCommand",
+    "DatasetTrainingCommand",
+    "DatasetTrainingResult",
     "NetworkSpecSchema",
     "InMemoryNetworkSpecRepository",
     "PyTorchNeuralComputeAdapter",
