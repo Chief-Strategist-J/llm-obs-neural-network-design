@@ -6,6 +6,7 @@ HTTP_HEADER_CORRELATION_ID: str = HTTP_CONSTANTS.HEADER_X_CORRELATION_ID
 
 STATUS_PENDING: str = "PENDING"
 STATUS_ACTIVE: str = "ACTIVE"
+STATUS_STOPPED: str = "STOPPED"
 STATUS_ARCHIVED: str = "ARCHIVED"
 
 CODE_VALIDATION_FAILED: str = "VALIDATION_FAILED"
@@ -14,6 +15,7 @@ CODE_INTERNAL_ERROR: str = "INTERNAL_SERVER_ERROR"
 
 TOPIC_SPEC_CREATED: str = "neural-network.spec-created.v1"
 TOPIC_TELEMETRY_SPANS_RAW: str = "llm-obs.telemetry.spans.raw.v1"
+TOPIC_TELEMETRY_SPANS_DLQ: str = "llm-obs.telemetry.spans.dlq.v1"
 TOPIC_TELEMETRY_DRIFT_ALERTS: str = "llm-obs.telemetry.drift-alerts.v1"
 TOPIC_MODEL_RETRAIN_COMMANDS: str = "llm-obs.neural.retrain-commands.v1"
 

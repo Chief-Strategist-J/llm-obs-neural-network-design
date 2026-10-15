@@ -18,7 +18,10 @@ messaging:
   kafka_bootstrap_servers: "localhost:9092"
   raw_telemetry_topic: "telemetry.spans.raw"
   sanitized_telemetry_topic: "telemetry.spans.sanitized"
+  dlq_telemetry_topic: "telemetry.spans.dlq"
   consumer_group: "neural-network-telemetry-group"
+  batch_size: 100
+  batch_timeout_ms: 1000
 observability:
   service_name: "neural-network-design"
   otlp_endpoint: "http://localhost:4317"
