@@ -252,38 +252,115 @@ flowchart TD
 
 ### 4.2 End-to-End System Decision Tree
 
-This decision tree defines the deterministic logic gates executed across every phase of ingestion, verification, training, and production promotion.
+This ASCII decision tree defines the deterministic logic gates executed across every phase of ingestion, verification, training, and production promotion:
 
-```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
-flowchart TD
-    START(["Start: Telemetry Batch Received"]) --> CHK_PARAMS{"1. Validate Spec Budget\n(layers <= 500 or budget >= 1M?)"}
-    
-    CHK_PARAMS -- "No" --> REJ_SPEC["Reject Spec: ValidationError\n(Status: REJECTED)"]
-    CHK_PARAMS -- "Yes" --> INGEST["2. Ingest and Hash Records\n(Kafka telemetry.spans.raw)"]
-    
-    INGEST --> CHK_LEAK{"3. Causal and Trace Leak Check\n(TrainTraces disjoint from ValTraces\nand MaxTrainTime <= MinValTime?)"}
-    
-    CHK_LEAK -- "No" --> REJ_LEAK["Reject Batch: LeakageDetectedError\n(Halt Ingestion Pipeline)"]
-    CHK_LEAK -- "Yes" --> RUN_BASELINE["4. Compute Trivial Baseline\n(Majority Class Frequency & Rolling Mean)"]
-    
-    RUN_BASELINE --> CHK_OVERFIT{"5. Tiny-Batch Overfit Gate\n(Loss <= 0.08 on 10-100 samples?)"}
-    
-    CHK_OVERFIT -- "No" --> FAIL_AUTOGRAD["Halt: Broken Autograd or Dead Activations\n(Fix Architecture or Learning Rate)"]
-    CHK_OVERFIT -- "Yes" --> TRAIN_DATASET["6. Execute Dataset Training\n(AdamW + Grad Clip 1.0 + Multi-Epoch DataLoader)"]
-    
-    TRAIN_DATASET --> EVAL_GATE{"7. Trivial Baseline Promotion Gate\n(Val F1 and Loss > Trivial Baseline?)"}
-    
-    EVAL_GATE -- "No" --> KEEP_BASELINE["Discard Neural Candidate\nRoute 100% Traffic to Heuristic Baseline"]
-    EVAL_GATE -- "Yes" --> PERSIST_CKPT["8. Persist Checkpoint & SHA-256 Hash\n(Transition Status to TRAINED / ACTIVE)"]
-    
-    PERSIST_CKPT --> PROD_SERVING["9. Hybrid Production Inference\n(Tier 1 CPU Fast-Path + Tier 2 Neural ResBlocks)"]
-    
-    PROD_SERVING --> CHK_DRIFT{"10. Streaming Drift & Incident Gate\n(KS-Test / PSI Shift Detected?)"}
-    
-    CHK_DRIFT -- "No" --> PROD_SERVING
-    CHK_DRIFT -- "Yes" --> RETRAIN_CYCLE["Trigger Autonomous Closed-Loop Retraining"]
-    RETRAIN_CYCLE --> INGEST
+```text
+[ START: Ingress Telemetry Micro-Batch Received ]
+  |
+  +--> [ Gate 1: Network Spec Budget Validation ]
+  |      |
+  |      +-- (layer_count > 500 AND parameter_budget < 1,000,000) ?
+  |      |     |
+  |      |     +-- [YES] --> [ ACTION: Raise ValidationError ]
+  |      |                   Status: REJECTED
+  |      |                   Log: Parameter density too high for requested budget
+  |      |                   TERMINATE
+  |      |
+  |      +-- [NO]  --> [ Proceed to Step 2 ]
+  |
+  +--> [ Step 2: Streaming Ingestion and Cryptographic Hashing ]
+  |      |
+  |      +--> Consume batch from Kafka topic: "telemetry.spans.raw"
+  |      +--> Extract W3C TraceContext ('traceparent', 'x-request-id')
+  |      +--> Parse into immutable Sequence[TelemetryRecordDTO]
+  |
+  +--> [ Gate 3: Causal Integrity and Trace-Boundary Isolation ]
+  |      |
+  |      +-- TrainTraces INTERSECT ValTraces != EMPTY ?
+  |      |     |
+  |      |     +-- [YES] --> [ ACTION: Raise LeakageDetectedError ]
+  |      |                   Log: Contamination detected. Same trace_id in Train and Val.
+  |      |                   HALT PIPELINE
+  |      |
+  |      +-- max(TrainTimestamp) > min(ValTimestamp) ?
+  |      |     |
+  |      |     +-- [YES] --> [ ACTION: Raise LeakageDetectedError ]
+  |      |                   Log: Physical causality violation. Temporal lookahead detected.
+  |      |                   HALT PIPELINE
+  |      |
+  |      +-- [NO]  --> [ Proceed to Step 4: Zero Leakage Confirmed ]
+  |
+  +--> [ Step 4: Trivial Empirical Baseline Benchmark ]
+  |      |
+  |      +--> Compute empirical prior on training split:
+  |      |      Majority Class = argmax(count(y_train == c))
+  |      |      Rolling Mean Latency = sum(latency) / N
+  |      +--> Evaluate dummy heuristic predictor on validation split
+  |      +--> Record Baseline Metrics: { Baseline_Accuracy, Baseline_F1, Baseline_MAE }
+  |      +--> Persist baseline benchmark record to database
+  |
+  +--> [ Gate 5: Tiny-Batch Autograd and Gradient Flow Gate ]
+  |      |
+  |      +--> Extract 10 to 100 calibration samples
+  |      +--> Initialize PyTorch Neural Core (Kaiming uniform weights, LayerNorm, GELU)
+  |      +--> Execute 50 epochs of backpropagation on calibration batch
+  |      |
+  |      +-- final_loss <= 0.08 ?
+  |      |     |
+  |      |     +-- [NO]  --> [ ACTION: Flag Broken Graph ]
+  |      |                   Log: Gradient flow failure, dead activations, or bad LR.
+  |      |                   HALT TRAINING (Do not scale compute)
+  |      |
+  |      +-- [YES] --> [ STATUS: TINY_BATCH_OVERFIT_VERIFIED ]
+  |                    Proceed to Step 6
+  |
+  +--> [ Step 6: Multi-Epoch Production Dataset Training ]
+  |      |
+  |      +--> Construct TensorDataset and batched DataLoader (shuffle=True)
+  |      +--> Loop epochs (1 .. E):
+  |      |      +--> Forward pass: encoder -> residual blocks -> linear classification head
+  |      |      +--> Compute loss: CrossEntropyLoss or FocalLoss
+  |      |      +--> Backward pass: compute adjoint gradients (loss.backward())
+  |      |      +--> Apply gradient clipping: clip_grad_norm_(max_norm=1.0)
+  |      |      +--> Optimizer update: AdamW step with weight decay (1e-4)
+  |      +--> Evaluate validation split under torch.no_grad()
+  |      +--> Compute Val_Loss, Val_Accuracy, Val_F1
+  |
+  +--> [ Gate 7: Trivial Baseline Promotion Gate ]
+  |      |
+  |      +-- (Candidate_Val_F1 <= Baseline_F1) OR (Candidate_Val_Loss >= Baseline_Loss) ?
+  |      |     |
+  |      |     +-- [YES] --> [ ACTION: Discard Neural Candidate ]
+  |      |                   Log: Neural network failed to outperform trivial heuristic.
+  |      |                   Route 100% production traffic to classical baseline.
+  |      |                   TERMINATE
+  |      |
+  |      +-- [NO]  --> [ ACTION: Promote Candidate Checkpoint ]
+  |                    Atomically write weights to disk: f"{spec_id}.pt"
+  |                    Compute cryptographic SHA-256 integrity digest
+  |                    Transition State Machine: STATUS_PENDING/OVERFIT -> STATUS_TRAINED -> STATUS_ACTIVE
+  |
+  +--> [ Step 8: Two-Tier Hybrid Production Inference ]
+  |      |
+  |      +--> Inbound streaming telemetry span arrived at wire speed
+  |      +--> Tier 1 (CPU Fast-Path): Evaluate streaming EWMA / CUSUM / quantiles
+  |      |
+  |      +-- Is span ambiguous or multi-service root cause candidate?
+  |      |     |
+  |      |     +-- [NO]  --> Emit Fast-Path prediction (Latency < 15 microseconds)
+  |      |     +-- [YES] --> Invoke Tier 2 Active PyTorch Tensor Checkpoint
+  |      |                   Emit Deep Contextual Anomaly Probability
+  |
+  +--> [ Gate 9: Streaming Concept Drift and Incident Monitoring ]
+         |
+         +--> Compute Kolmogorov-Smirnov and PSI tests on rolling telemetry windows
+         |
+         +-- Drift Detected (p < 0.01) OR High Incident False-Positive Rate ?
+               |
+               +-- [NO]  --> Continue Serving
+               +-- [YES] --> [ ACTION: Autonomous Trigger Closed-Loop ]
+                             Append edge-case incidents to dataset pool
+                             Loop back to Step 2 (Autonomous Retrain Cycle)
 ```
 
 ### 4.3 End-to-End Runtime Function Call Stack
