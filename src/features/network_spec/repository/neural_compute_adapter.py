@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
+from typing import Sequence
 from src.features.network_spec.types.network_spec_types import (
     NetworkSpecModel,
     TinyBatchOverfitCommand,
@@ -37,8 +38,12 @@ class NeuralComputePort(ABC):
         learning_rate: float,
         weight_decay: float,
         checkpoint_dir: str,
+        loss_type: str = "cross_entropy",
+        focal_gamma: float = 2.0,
+        class_weights: Sequence[float] | None = None,
     ) -> tuple[int, float, float, float, str, str]:
         pass
+
 
     @abstractmethod
     def save_checkpoint(self, spec_id: str, checkpoint_dir: str) -> str:
@@ -155,8 +160,13 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
         learning_rate: float,
         weight_decay: float,
         checkpoint_dir: str,
+        loss_type: str = "cross_entropy",
+        focal_gamma: float = 2.0,
+        class_weights: Sequence[float] | None = None,
     ) -> tuple[int, float, float, float, str, str]:
         import hashlib
+        from src.features.adaptive_loss.modules.torch_loss_modules import FocalLoss, ClassBalancedLoss
+
         device = torch.device("cpu")
         net = PyTorchNeuralArchitecture(
             input_dim=model_spec.input_dim,
@@ -166,8 +176,16 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
         ).to(device)
         net.train()
 
-        criterion = nn.CrossEntropyLoss()
+        if loss_type == "focal_loss":
+            criterion = FocalLoss(gamma=focal_gamma, alpha=class_weights)
+        elif loss_type == "class_balanced" and class_weights is not None:
+            criterion = ClassBalancedLoss(class_weights=class_weights, gamma=focal_gamma)
+        else:
+            weight_tensor = torch.tensor(class_weights, dtype=torch.float32) if class_weights else None
+            criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+
         optimizer = torch.optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
 
         x_train = torch.tensor([s[0] for s in train_samples], dtype=torch.float32, device=device)
         y_train = torch.tensor([s[1] for s in train_samples], dtype=torch.long, device=device)

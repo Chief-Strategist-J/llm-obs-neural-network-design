@@ -100,7 +100,11 @@ class NetworkSpecWorkflow:
             learning_rate=command.learning_rate,
             weight_decay=command.weight_decay,
             checkpoint_dir=command.target_checkpoint_dir,
+            loss_type=command.loss_type,
+            focal_gamma=command.focal_gamma,
+            class_weights=command.class_weights,
         )
+
 
         next_status = NetworkSpecMachine.transition(existing.status, STATUS_TRAINED)
 

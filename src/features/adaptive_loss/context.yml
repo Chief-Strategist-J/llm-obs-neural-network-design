@@ -1,0 +1,11 @@
+feature_name: adaptive_loss
+bounded_context: neural_network_design
+description: Adaptive loss formulations including Focal Loss and Class-Balanced Effective Sample weighting for severe telemetry class imbalance.
+ports:
+  - repository.adaptive_loss_repository_port
+invariants:
+  - class weights must be strictly non-negative finite floats
+  - focal loss gamma parameter must be non-negative (default 2.0)
+  - class-balanced beta parameter must be in open interval (0.0, 1.0)
+  - effective sample weights must be normalized to sum to number of classes
+  - loss computations must never emit NaN or Inf gradients even with zero minority class presence in batch

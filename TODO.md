@@ -46,8 +46,9 @@ Deep neural networks are computationally wasteful and operational liabilities wh
 | `PyTorchNeuralArchitecture` | P0 (Critical) | **Done** | Residual feed-forward backbone with GELU activations and LayerNorm for stable gradient propagation. | Low |
 | `MultiLayerTestHierarchy` | P0 (Critical) | **Done** | 29 tests spanning unit, cross-feature integration, end-to-end API lifecycle, and performance latency benchmarks. | Low |
 | `CentralizedDockerConfig` | P0 (Critical) | **Done** | Unified `.env.example`, `config/env.schema`, `config/default.yaml`, and `deploy/docker/docker-compose.yaml`. | Low |
-| `AdaptiveLossCore` | P0 (Critical) | **Pending** | Focal Loss and class-balanced cost functions required to stop models from predicting zero failures on imbalanced data. | High |
+| `AdaptiveLossCore` | P0 (Critical) | **Done** | Focal Loss and class-balanced cost functions required to stop models from predicting zero failures on imbalanced data. | Low |
 | `StreamingBaselinePort` | P0 (Critical) | **Pending** | Wire-speed EWMA, CUSUM, and DDSketch streaming filters to bypass deep inference on standard telemetry. | Medium |
+
 | `KafkaWorkerDaemon` | P1 (High) | **Pending** | Production background process consuming `telemetry.spans.raw` and feeding continuous pipeline batches. | Medium |
 | `CheckpointStorageAdapter` | P1 (High) | **Pending** | S3/MinIO/GCS adapter storing model weights with SHA-256 verification and atomic metadata locking. | Medium |
 | `UncertaintyRouter` | P1 (High) | **Pending** | Entropy-based gateway directing low-complexity spans to classical baselines and complex spans to neural layers. | Medium |

@@ -86,6 +86,10 @@ class NetworkSpecSchema:
         lr = payload.get("learning_rate", 0.001)
         decay = payload.get("weight_decay", 1e-4)
         ckpt_dir = payload.get("target_checkpoint_dir", "checkpoints")
+        loss_type = payload.get("loss_type", "cross_entropy")
+        focal_gamma = payload.get("focal_gamma", 2.0)
+        raw_weights = payload.get("class_weights")
+        class_weights = tuple(float(w) for w in raw_weights) if raw_weights else None
 
         if not spec_id:
             raise ValidationError("Field 'spec_id' is required.")
@@ -116,7 +120,11 @@ class NetworkSpecSchema:
             learning_rate=float(lr),
             weight_decay=float(decay),
             target_checkpoint_dir=str(ckpt_dir),
+            loss_type=str(loss_type),
+            focal_gamma=float(focal_gamma),
+            class_weights=class_weights,
         )
+
 
     @staticmethod
     def to_api(model: NetworkSpecModel) -> Mapping[str, Any]:

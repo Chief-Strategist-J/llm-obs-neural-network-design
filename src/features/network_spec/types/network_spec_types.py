@@ -57,6 +57,10 @@ class DatasetTrainingCommand:
     learning_rate: float = 0.001
     weight_decay: float = 1e-4
     target_checkpoint_dir: str = "checkpoints"
+    loss_type: str = "cross_entropy"
+    focal_gamma: float = 2.0
+    class_weights: Sequence[float] | None = None
+
 
 
 @dataclass(frozen=True)
