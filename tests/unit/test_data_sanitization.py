@@ -108,3 +108,69 @@ async def test_sanitization_service_fit_and_transform():
     assert len(cleaned_tuples) == 2
     assert cleaned_tuples[0].sample_id == "s1"
     assert cleaned_tuples[1].sample_id == "s2"
+
+
+def test_polars_sanitization_rules():
+    import polars as pl
+
+    df = pl.DataFrame({
+        "latency_ms": [10.0, 20.0, 30.0, None, float("nan")],
+        "token_count": [100.0, 200.0, 300.0, 400.0, 500.0],
+        "constant_col": [5.0, 5.0, 5.0, 5.0, 5.0],
+    })
+
+    stats = DataSanitizationRules.compute_feature_statistics_polars(
+        df=df,
+        feature_columns=["latency_ms", "token_count", "constant_col"],
+    )
+
+    assert len(stats) == 3
+    assert stats[0].mean == 20.0
+    assert stats[1].mean == 300.0
+    assert stats[2].is_constant is True
+
+    cfg = SanitizationConfigDTO(clip_outliers=True, outlier_std_threshold=2.0, normalize_zscore=True)
+    cleaned_df = DataSanitizationRules.sanitize_dataframe_polars(
+        df=df,
+        feature_columns=["latency_ms", "token_count", "constant_col"],
+        statistics=stats,
+        config=cfg,
+    )
+
+    assert cleaned_df.shape == (5, 3)
+    assert cleaned_df["latency_ms"].null_count() == 0
+    assert not any(math.isnan(v) for v in cleaned_df["latency_ms"].to_list())
+    assert cleaned_df["constant_col"].to_list() == [0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_polars_service_fit_and_transform():
+    import polars as pl
+
+    repo = InMemoryDataSanitizationRepository()
+    service = DataSanitizationService(repository=repo)
+    ctx = TraceContext(trace_id="polars-trace-001")
+
+    train_df = pl.DataFrame({
+        "feat_a": [1.0, 2.0, 3.0, 4.0, 5.0],
+        "feat_b": [10.0, 20.0, 30.0, 40.0, 50.0],
+    })
+
+    fit_res = await service.fit_profile_polars(ctx, train_df, ["feat_a", "feat_b"])
+    assert fit_res.is_ok is True
+    profile = fit_res.value
+    assert profile.feature_count == 2
+    assert profile.status == STATUS_FITTED
+
+    eval_df = pl.DataFrame({
+        "feat_a": [float("nan"), 2.0, float("inf")],
+        "feat_b": [None, 30.0, 1000.0],
+    })
+
+    trans_res = await service.transform_dataframe_polars(ctx, profile.profile_id, eval_df, ["feat_a", "feat_b"])
+    assert trans_res.is_ok is True
+    cleaned_eval_df = trans_res.value
+    assert cleaned_eval_df.shape == (3, 2)
+    assert cleaned_eval_df["feat_a"].null_count() == 0
+    assert cleaned_eval_df["feat_b"].null_count() == 0
+

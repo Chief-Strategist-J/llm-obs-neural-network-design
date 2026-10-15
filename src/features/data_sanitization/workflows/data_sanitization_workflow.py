@@ -62,3 +62,22 @@ class DataSanitizationWorkflow:
                 )
             )
         return tuple(cleaned)
+
+    async def execute_transform_polars_flow(
+        self,
+        ctx: TraceContext,
+        profile_id: str,
+        df: "polars.DataFrame",
+        feature_columns: Sequence[str],
+    ) -> "polars.DataFrame":
+        profile = await self._repo.find_profile_by_id(ctx, profile_id)
+        if not profile:
+            raise NotFoundError(f"Sanitization profile {profile_id} not found.")
+
+        return DataSanitizationRules.sanitize_dataframe_polars(
+            df=df,
+            feature_columns=feature_columns,
+            statistics=profile.statistics,
+            config=profile.config,
+        )
+
