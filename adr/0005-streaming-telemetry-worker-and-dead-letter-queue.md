@@ -1,35 +1,239 @@
-# ADR 0005: High-Throughput Streaming Telemetry Worker and Dead-Letter Queue (DLQ) Architecture
+# ADR 0005: High-Throughput Streaming Telemetry Worker, Micro-Batching, and Dead-Letter Queue (DLQ) Architecture
 
-## Status
-Accepted
+- **Status**: Accepted
+- **Date**: 2026-10-15
+- **Authors**: Platform Architecture and Core Neural Systems Team
+- **RFC / Standards**: W3C Distributed Tracing (TraceContext level-1), Apache Kafka Protocol Specification, Reactive Streams Specification, IEEE 754
+- **Deciders**: Lead Systems Architect, Distributed Systems Lead, Machine Learning Infrastructure Engineer
 
-## Context
-Production LLM observability generates thousands of spans per second across multi-hop microservices. Ingesting this volume via synchronous batch HTTP requests introduces artificial latency and risk of buffer starvation. 
+---
 
-To bridge continuous Kafka streams into the hexagonal neural telemetry pipeline, the system requires a dedicated streaming consumer daemon capable of:
-1. Ingesting raw streaming spans partitioned by `trace_id` from Kafka (`telemetry.spans.raw`).
-2. Buffering streaming records into configurable micro-batches gated by both batch size (e.g. 100 spans) and elapsed time (e.g. 1000 ms).
-3. Extracting and propagating W3C distributed trace context (`traceparent`, `x-request-id`, `x-correlation-id`).
-4. Routing corrupted, malformed, or unparseable payloads directly to a dedicated Dead-Letter Queue (DLQ) topic (`telemetry.spans.dlq`) without crashing or halting consumer offset progress.
-5. Emitting deterministic worker observability metrics (`total_consumed`, `total_batched`, `total_dlq_routed`, `total_batches_dispatched`).
+## 1. Context and Problem Statement
 
-## Decision
-1. **Hexagonal Feature Structure**:
-   - Implemented `src/features/streaming_telemetry_worker/` with:
-     - `rules/streaming_telemetry_worker_rules.py`: Pure deterministic functions for span parsing, micro-batch construction, flushing conditions, and DLQ payload generation.
-     - `types/streaming_telemetry_worker_types.py`: Immutable DTOs (`TelemetrySpanMessageDTO`, `MicroBatchDTO`, `DeadLetterMessageDTO`, `WorkerMetricsDTO`).
-     - `repository/streaming_telemetry_worker_port.py` and `streaming_telemetry_worker_repository.py`: Storage contracts and thread-safe implementations for micro-batches, DLQ records, and telemetry metrics.
-     - `service/streaming_telemetry_worker_service.py`: Orchestrator managing consumer polling, buffer flushing, DLQ routing via KafkaProducerPort, and OpenTelemetry child span lifecycle.
+Production LLM observability generates thousands of distributed spans per second across multi-hop agent execution workflows, tool calls, and model inference pipelines. Ingesting this continuous volume via synchronous HTTP batch payloads introduces catastrophic bottlenecks:
+1. **HTTP Connection Overhead and Head-of-Line Blocking**: High-throughput distributed tracing generates persistent request storms that saturate API gateway sockets, causing client timeouts and dropped spans.
+2. **Causal Inversion and Shuffling**: HTTP load balancers route spans from the same distributed transaction across arbitrary backend processes, destroying trace causal ordering before preprocessing.
+3. **Poison-Pill Telemetry Payloads**: Corrupted JSON strings, truncated buffers, or malformed numeric arrays cause unhandled parsing exceptions that crash continuous stream consumption, stalling offset commits and producing partition lag.
+4. **Lack of W3C Trace Continuity**: Without header extraction at the messaging boundary, streaming background workers lose distributed trace context, preventing end-to-end latency tracking across inference pipelines.
+5. **Buffer Starvation and Latency Mismatch**: Deep neural inference layers operate most efficiently on micro-batched tensor arrays, whereas Kafka consumers deliver individual span records. A hybrid buffer mechanism is required to balance low latency with optimal batch throughput.
 
-2. **Zero Magic Strings and Centralized Configuration**:
-   - Registered `TOPIC_TELEMETRY_SPANS_DLQ` in `src/shared/constants/system_constants.py`.
-   - Declared `dlq_telemetry_topic`, `batch_size`, and `batch_timeout_ms` under `config/default.yaml` and `config/env.schema`.
+---
 
-3. **Fault Tolerance and Non-Blocking Ingestion**:
-   - Malformed payloads do not throw uncaught exceptions; they are routed with original byte streams, failure reasons, and partition/offset markers to the DLQ topic.
-   - Consumers commit offsets asynchronously to maintain wire-speed ingestion throughput.
+## 2. Decision Drivers and Core Principles
 
-## Consequences
-- Continuous streaming ingestion is decoupled from deep PyTorch neural training and batch processing.
-- Corrupted payloads are isolated into DLQ for post-mortem analysis without blocking streaming pipelines.
-- Unit, integration, and end-to-end tests verify micro-batching, DLQ routing, and downstream baseline gating.
+1. **Pure Decoupled Ingestion Backbone**: Telemetry ingestion must run as an asynchronous background worker loop decoupled from synchronous REST API delivery and heavy PyTorch training processes.
+2. **Partitioned Ingestion by Trace Identity**: All spans originating from the same distributed trace are keyed by `trace_id` in Kafka topic `llm-obs.telemetry.spans.raw.v1` to guarantee causal ordering at the consumer partition level.
+3. **Zero Poison-Pill Loss (DLQ Invariant)**: Any unparseable, malformed, or corrupt telemetry payload is routed immediately to `llm-obs.telemetry.spans.dlq.v1` alongside partition metadata, byte offset, error reason, and failed timestamp without halting consumer offset progress.
+4. **Dual-Gated Micro-Batching**: Micro-batch formation must be governed deterministically by two independent thresholds: maximum batch capacity ($N_{\text{max}} = 100$) and maximum elapsed time ($\Delta t_{\text{max}} = 1000\,\text{ms}$).
+5. **Strict W3C Distributed Context Extraction**: The consumer pipeline must extract incoming `traceparent`, `x-request-id`, and `x-correlation-id` headers and inject them into worker execution spans.
+6. **Hexagonal Strictness & Zero Magic Strings**: Domain rules, immutable DTOs, and repository ports remain isolated from concrete messaging drivers and hardcoded topic strings.
+
+---
+
+## 3. High-Level Architecture (HLD)
+
+The streaming telemetry worker acts as the operational bridge between external Kafka event buses and downstream neural data pipelines:
+
+```mermaid
+flowchart TD
+    subgraph INGRESS_PRODUCERS["Distributed Telemetry Producers"]
+        P1["Agent Orchestrator Spans"]
+        P2["Vector DB Query Spans"]
+        P3["LLM Model Token Spans"]
+    end
+
+    subgraph KAFKA_BACKBONE["Apache Kafka Messaging Backbone"]
+        K_RAW["Topic: llm-obs.telemetry.spans.raw.v1\nPartition Key: trace_id\nOrdering: Chronological per Trace"]
+        K_DLQ["Topic: llm-obs.telemetry.spans.dlq.v1\nKey: dlq_id\nPayload: Corrupted Payload + Diagnostics"]
+    end
+
+    subgraph WORKER_SUBSYSTEM["Streaming Telemetry Worker Service"]
+        W_CONS["KafkaConsumerAdapter\n(Confluent / InMemory)"]
+        W_PIPE["ConsumerMiddlewarePipeline\n(W3C Tracing + DLQ Guard)"]
+        W_RULE["streaming_telemetry_worker_rules\n(parse_telemetry_span)"]
+        W_BUFF["Micro-Batch Sliding Buffer\n(Capacity: 100 | Timeout: 1000ms)"]
+        W_PROD["KafkaProducerAdapter\n(DLQ Dispatcher)"]
+    end
+
+    subgraph DOWNSTREAM_TARGETS["Hybrid Telemetry Downstream Engines"]
+        T1_FAST["Tier 1: StreamingBaselines\n(EWMA / CUSUM Fast-Path Filter)"]
+        T2_SLOW["Tier 2: NeuralSpecService\n(Residual PyTorch Model Overfit / Training)"]
+        STORAGE["StreamingTelemetryWorkerRepository\n(Micro-Batches / DLQ Log / Metrics)"]
+    end
+
+    P1 -->|Produce with trace_id| K_RAW
+    P2 -->|Produce with trace_id| K_RAW
+    P3 -->|Produce with trace_id| K_RAW
+
+    K_RAW -->|poll| W_CONS
+    W_CONS --> W_PIPE
+    W_PIPE --> W_RULE
+
+    W_RULE -->|Valid Span| W_BUFF
+    W_RULE -->|Corrupt / Invalid| W_PROD
+    W_PROD -->|Produce dlq payload| K_DLQ
+
+    W_BUFF -->|Capacity >= 100 or Elapsed >= 1000ms| STORAGE
+    STORAGE -->|Batch records| T1_FAST
+    STORAGE -.->|Offline training split| T2_SLOW
+```
+
+---
+
+## 4. Sequence Workflow: Streaming Ingestion, Micro-Batching, and DLQ Routing
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Producer as Kafka Producer (Tracer SDK)
+    participant Kafka as Kafka Broker (telemetry.spans.raw)
+    participant Worker as StreamingTelemetryWorkerService
+    participant Rules as Worker Pure Rules
+    participant DLQTopic as Kafka Broker (telemetry.spans.dlq)
+    participant Repo as Worker Repository
+    participant FastPath as StreamingBaselines (Tier 1)
+
+    Producer->>Kafka: produce(topic="raw", key=trace_id, value=span_bytes, headers=W3C)
+    Worker->>Kafka: poll(timeout=0.05s)
+    Kafka-->>Worker: KafkaMessage(topic, partition, offset, value, headers)
+    
+    alt Payload is Corrupted or Malformed
+        Worker->>Rules: parse_telemetry_span(value)
+        Rules-->>Worker: Result.err(ValidationError("Malformed JSON"))
+        Worker->>Rules: build_dead_letter_message(dlq_id, partition, offset, value, reason)
+        Rules-->>Worker: DeadLetterMessageDTO
+        Worker->>Repo: save_dead_letter(DeadLetterMessageDTO)
+        Worker->>DLQTopic: produce(topic="dlq", key=dlq_id, value=dlq_json)
+    else Payload is Valid Telemetry Span
+        Worker->>Rules: parse_telemetry_span(value)
+        Rules-->>Worker: Result.ok(TelemetrySpanMessageDTO)
+        Worker->>Worker: Append to in-memory buffer
+    end
+
+    alt should_flush_buffer(size >= batch_size OR elapsed_ms >= timeout_ms)
+        Worker->>Rules: build_micro_batch(batch_id, timestamp, buffer_spans)
+        Rules-->>Worker: MicroBatchDTO
+        Worker->>Repo: save_micro_batch(MicroBatchDTO)
+        Worker->>Worker: Clear buffer and reset timer
+        Worker->>Kafka: commit(asynchronous=True)
+        Worker->>FastPath: triage_span_metric(metric_name, features)
+    end
+```
+
+---
+
+## 5. Low-Level Architecture (LLD) and Hexagonal Boundaries
+
+The implementation strictly enforces clean hexagonal architectural separation:
+
+```mermaid
+classDiagram
+    class StreamingTelemetryWorkerRepositoryPort {
+        <<interface>>
+        +save_micro_batch(batch: MicroBatchDTO) Result
+        +save_dead_letter(dlq: DeadLetterMessageDTO) Result
+        +list_micro_batches(limit: int) Result
+        +list_dead_letters(limit: int) Result
+        +update_metrics(metrics: WorkerMetricsDTO) Result
+        +get_metrics() Result
+    }
+
+    class InMemoryStreamingTelemetryWorkerRepository {
+        -List~MicroBatchDTO~ _batches
+        -List~DeadLetterMessageDTO~ _dead_letters
+        -WorkerMetricsDTO _metrics
+        +save_micro_batch(batch: MicroBatchDTO) Result
+        +save_dead_letter(dlq: DeadLetterMessageDTO) Result
+        +list_micro_batches(limit: int) Result
+        +list_dead_letters(limit: int) Result
+        +update_metrics(metrics: WorkerMetricsDTO) Result
+        +get_metrics() Result
+    }
+
+    class StreamingTelemetryWorkerService {
+        -StreamingTelemetryWorkerRepositoryPort _repository
+        -KafkaProducerPort _producer
+        -KafkaConsumerPort _consumer
+        -int _batch_size
+        -float _batch_timeout_ms
+        -List~TelemetrySpanMessageDTO~ _buffer
+        -float _last_flush_time_ms
+        +process_raw_message(ctx, topic, partition, offset, payload, headers) Result
+        +flush_buffer(ctx, force) Result
+        +poll_and_dispatch_cycle(ctx, max_records) Result
+        +get_worker_metrics(ctx) Result
+    }
+
+    class TelemetrySpanMessageDTO {
+        +str span_id
+        +str trace_id
+        +int timestamp_epoch_ms
+        +Sequence~float~ features
+        +int target_label
+        +str service_name
+        +Mapping attributes
+    }
+
+    class MicroBatchDTO {
+        +str batch_id
+        +str created_at_iso
+        +Sequence~TelemetrySpanMessageDTO~ records
+        +int trace_count
+        +int total_spans
+    }
+
+    class DeadLetterMessageDTO {
+        +str dlq_id
+        +str original_topic
+        +int partition
+        +str offset
+        +str raw_payload_utf8
+        +str error_reason
+        +str failed_at_iso
+        +Mapping headers
+    }
+
+    StreamingTelemetryWorkerRepositoryPort <|.. InMemoryStreamingTelemetryWorkerRepository : implements
+    StreamingTelemetryWorkerService --> StreamingTelemetryWorkerRepositoryPort : delegates storage
+    StreamingTelemetryWorkerService ..> TelemetrySpanMessageDTO : buffers
+    StreamingTelemetryWorkerService ..> MicroBatchDTO : produces
+    StreamingTelemetryWorkerService ..> DeadLetterMessageDTO : routes
+```
+
+---
+
+## 6. Mathematical Formulations
+
+### 6.1 Deterministic Dual-Gated Flushing Predicate
+
+Let $\mathcal{B}_t = \{ s_1, s_2, \dots, s_k \}$ denote the current in-memory span buffer at continuous time $t$. Let $T_{\text{flush}}$ denote the timestamp of the last executed flush event, with $\Delta t = t - T_{\text{flush}}$ representing the elapsed duration in milliseconds.
+
+The buffer flushing decision function $\Phi(\mathcal{B}_t, \Delta t) \in \{0, 1\}$ evaluates as:
+
+$$\Phi(\mathcal{B}_t, \Delta t) = \mathbb{I}\Big(|\mathcal{B}_t| > 0\Big) \land \Bigg( \mathbb{I}\Big(|\mathcal{B}_t| \ge N_{\text{max}}\Big) \lor \mathbb{I}\Big(\Delta t \ge \tau_{\text{max}}\Big) \Bigg)$$
+
+Where:
+- $N_{\text{max}} = 100$ is the configured maximum micro-batch capacity (`batch_size`).
+- $\tau_{\text{max}} = 1000\,\text{ms}$ is the maximum buffer latency budget (`batch_timeout_ms`).
+- $\mathbb{I}(\cdot)$ is the indicator function.
+
+### 6.2 Unique Trace Entropy and Diversity
+
+To ensure micro-batches sent to downstream neural training partitions contain balanced representation and prevent single-trace dominance, the worker monitors trace diversity:
+
+$$H(\mathcal{T}) = -\sum_{i=1}^{M} \frac{n_i}{N} \log_2 \left(\frac{n_i}{N}\right)$$
+
+Where $M$ is the number of distinct `trace_id` instances in micro-batch $\mathcal{B}$, $n_i$ is the count of spans belonging to trace $i$, and $N = |\mathcal{B}|$ is the total spans in the batch.
+
+---
+
+## 7. Consequences and Guarantees
+
+### Positive
+- **Zero Ingestion Drop**: Invalid and corrupted payloads are immediately quarantined to `llm-obs.telemetry.spans.dlq.v1` for dead-letter reprocessing without breaking Kafka consumer partition consumption.
+- **Trace Continuity**: W3C headers are preserved and propagated to both child spans and DLQ records.
+- **Low Latency & High Throughput**: Micro-batch dual gating ensures latency never exceeds $1000\,\text{ms}$ under low traffic, while batch capacity caps at $100$ records under traffic bursts.
+- **Seamless Downstream Fast-Path Handoff**: Micro-batches feed directly into `StreamingBaselineService` (EWMA / CUSUM) with zero data transformation overhead.
+
+### Negative / Trade-Offs
+- In-memory buffering introduces a small window where uncommitted spans could be re-polled in the event of worker process termination before buffer flush. Mitigation: commits are performed immediately upon buffer flush.
