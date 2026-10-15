@@ -8,7 +8,10 @@ from src.features.network_spec.repository.neural_compute_adapter import PyTorchN
 
 from src.infra.config.config_loader import AppConfig
 
-router = APIRouter(prefix="/v1/network-spec", tags=["network-spec"])
+router = APIRouter(
+    prefix=AppConfig.get_endpoint("network_spec", "/v1/network-spec"),
+    tags=["network-spec"],
+)
 
 _repo = InMemoryNetworkSpecRepository()
 _compute = PyTorchNeuralComputeAdapter()

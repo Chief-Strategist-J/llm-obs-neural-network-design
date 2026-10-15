@@ -4,34 +4,28 @@ from src.features.system_telemetry_pipeline.service.telemetry_pipeline_service i
 from src.features.system_telemetry_pipeline.repository.telemetry_pipeline_repository import InMemoryTelemetryPipelineRepository
 from src.features.system_telemetry_pipeline.schema.telemetry_pipeline_schema import TelemetryPipelineSchema
 from src.shared.types.envelope_types import TraceContext
-from src.shared.errors.app_errors import ApplicationError
+from src.infra.config.config_loader import AppConfig
 
-router = APIRouter(prefix="/v1/telemetry-pipeline", tags=["telemetry-pipeline"])
+router = APIRouter(
+    prefix=AppConfig.get_endpoint("telemetry_pipeline", "/v1/telemetry-pipeline"),
+    tags=["telemetry-pipeline"],
+)
 
 _pipeline_repo = InMemoryTelemetryPipelineRepository()
 _pipeline_service = TelemetryPipelineService(repository=_pipeline_repo)
 
+
+from src.shared.errors.app_errors import ApplicationError
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def initialize_pipeline(request: Request, response: Response):
     ctx = getattr(request.state, "trace_context", None) or TraceContext(
         trace_id=request.headers.get("traceparent", "trace-synthetic-001")
     )
-    trace_id = ctx.trace_id
-    try:
-        payload = await request.json()
-        dto = TelemetryPipelineSchema.from_api(payload)
-        res = await _pipeline_service.initialize_pipeline_and_baseline(ctx, dto)
-        if res.is_ok and res.value:
-            data = TelemetryPipelineSchema.to_api(res.value)
-            response.status_code = status.HTTP_201_CREATED
-            return {"success": True, "data": data, "meta": {"trace_id": trace_id}, "error": None}
-        err = res.error or ApplicationError("Failed to initialize telemetry pipeline")
-        response.status_code = err.status_code
-        return {"success": False, "data": None, "meta": {"trace_id": trace_id}, "error": {"code": err.canonical_code, "message": err.message}}
-    except ApplicationError as app_err:
-        response.status_code = app_err.status_code
-        return {"success": False, "data": None, "meta": {"trace_id": trace_id}, "error": {"code": app_err.canonical_code, "message": app_err.message}}
-    except Exception as ex:
-        response.status_code = 500
-        return {"success": False, "data": None, "meta": {"trace_id": trace_id}, "error": {"code": "INTERNAL_SERVER_ERROR", "message": str(ex)}}
+    payload = await request.json()
+    dto = TelemetryPipelineSchema.from_api(payload)
+    res = await _pipeline_service.initialize_pipeline_and_baseline(ctx, dto)
+    if not res.is_ok or not res.value:
+        raise res.error or ApplicationError("Failed to initialize telemetry pipeline")
+    data = TelemetryPipelineSchema.to_api(res.value)
+    return {"success": True, "data": data, "meta": {"trace_id": ctx.trace_id}, "error": None}

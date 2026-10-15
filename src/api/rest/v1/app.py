@@ -24,8 +24,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     from python_shared.http.middleware.correlation_middleware import CorrelationAndTelemetryMiddleware
-    from src.shared.middleware.trace_context_middleware import TraceContextMiddleware
-    from src.shared.middleware.error_envelope_middleware import ErrorEnvelopeMiddleware
+    from src.infra.middleware.trace_context_middleware import TraceContextMiddleware
+    from src.infra.middleware.error_envelope_middleware import ErrorEnvelopeMiddleware
     app.add_middleware(ErrorEnvelopeMiddleware)
     app.add_middleware(TraceContextMiddleware)
     app.add_middleware(CorrelationAndTelemetryMiddleware)

@@ -31,6 +31,7 @@ class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
                     "data": None,
                     "error": {
                         "message": err.message,
+                        "code": err.canonical_code,
                         "canonical_code": err.canonical_code,
                         "retryable": err.retryable,
                         "details": err.details,
@@ -54,6 +55,7 @@ class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
                     "data": None,
                     "error": {
                         "message": str(ex),
+                        "code": CODE_INTERNAL_ERROR,
                         "canonical_code": CODE_INTERNAL_ERROR,
                         "retryable": False,
                         "details": {},

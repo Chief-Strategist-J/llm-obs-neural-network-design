@@ -9,7 +9,7 @@ Execution Workflow:
 from __future__ import annotations
 import logging
 from typing import Any, Mapping
-from src.shared.ports.kafka_port import KafkaProducerPort, KafkaConsumerPort
+from src.infra.messaging.ports.kafka_port import KafkaProducerPort, KafkaConsumerPort
 
 logger = logging.getLogger(__name__)
 
