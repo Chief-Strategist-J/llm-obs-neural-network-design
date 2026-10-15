@@ -250,6 +250,61 @@ flowchart TD
 - **The test set is touched once**. Reusing it turns it into a validation set and destroys generalization evidence.
 - **Self-Learning Trigger**: When online monitoring detects statistical drift (Kolmogorov-Smirnov or population stability index shift) or high loss on newly resolved incidents, the system cycles back to the data collection and causal split stage without manual intervention.
 
+### 4.2 End-to-End System Decision Tree
+
+This decision tree defines the deterministic logic gates executed across every phase of ingestion, verification, training, and production promotion.
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1F2937', 'primaryBorderColor': '#60A5FA', 'primaryTextColor': '#F3F4F6', 'lineColor': '#60A5FA', 'secondaryColor': '#064E3B', 'tertiaryColor': '#78350F', 'mainBkg': '#111827', 'nodeBorder': '#60A5FA'}}}%%
+flowchart TD
+    START(["Start: Telemetry Batch Received"]) --> CHK_PARAMS{"1. Validate Spec Budget\n(layers <= 500 or budget >= 1M?)"}
+    
+    CHK_PARAMS -- "No" --> REJ_SPEC["Reject Spec: ValidationError\n(Status: REJECTED)"]
+    CHK_PARAMS -- "Yes" --> INGEST["2. Ingest and Hash Records\n(Kafka telemetry.spans.raw)"]
+    
+    INGEST --> CHK_LEAK{"3. Causal and Trace Leak Check\n(TrainTraces disjoint from ValTraces\nand MaxTrainTime <= MinValTime?)"}
+    
+    CHK_LEAK -- "No" --> REJ_LEAK["Reject Batch: LeakageDetectedError\n(Halt Ingestion Pipeline)"]
+    CHK_LEAK -- "Yes" --> RUN_BASELINE["4. Compute Trivial Baseline\n(Majority Class Frequency & Rolling Mean)"]
+    
+    RUN_BASELINE --> CHK_OVERFIT{"5. Tiny-Batch Overfit Gate\n(Loss <= 0.08 on 10-100 samples?)"}
+    
+    CHK_OVERFIT -- "No" --> FAIL_AUTOGRAD["Halt: Broken Autograd or Dead Activations\n(Fix Architecture or Learning Rate)"]
+    CHK_OVERFIT -- "Yes" --> TRAIN_DATASET["6. Execute Dataset Training\n(AdamW + Grad Clip 1.0 + Multi-Epoch DataLoader)"]
+    
+    TRAIN_DATASET --> EVAL_GATE{"7. Trivial Baseline Promotion Gate\n(Val F1 and Loss > Trivial Baseline?)"}
+    
+    EVAL_GATE -- "No" --> KEEP_BASELINE["Discard Neural Candidate\nRoute 100% Traffic to Heuristic Baseline"]
+    EVAL_GATE -- "Yes" --> PERSIST_CKPT["8. Persist Checkpoint & SHA-256 Hash\n(Transition Status to TRAINED / ACTIVE)"]
+    
+    PERSIST_CKPT --> PROD_SERVING["9. Hybrid Production Inference\n(Tier 1 CPU Fast-Path + Tier 2 Neural ResBlocks)"]
+    
+    PROD_SERVING --> CHK_DRIFT{"10. Streaming Drift & Incident Gate\n(KS-Test / PSI Shift Detected?)"}
+    
+    CHK_DRIFT -- "No" --> PROD_SERVING
+    CHK_DRIFT -- "Yes" --> RETRAIN_CYCLE["Trigger Autonomous Closed-Loop Retraining"]
+    RETRAIN_CYCLE --> INGEST
+```
+
+### 4.3 End-to-End Runtime Function Call Stack
+
+The table below catalogs the exact, deterministic call stack executed by the engine from ingress to weight serialization:
+
+| Level | Subsystem / Layer | Function / Method Signature | Exact Execution Responsibility |
+| :--- | :--- | :--- | :--- |
+| **1. Delivery** | API Router & Handler | `POST /v1/network-spec/train` -> `NetworkSpecHandler.handle_train_dataset(ctx, payload)` | Deserializes request payload, extracts W3C trace context, and invokes domain service. |
+| **2. Schema** | Schema Layer | `NetworkSpecSchema.parse_training_command(payload)` | Validates parameter bounds, creates immutable typed `DatasetTrainingCommand` instances. |
+| **3. Service** | Domain Service | `NetworkSpecService.train_dataset(ctx, command)` | Starts OpenTelemetry child span (`network_spec.train_dataset`), wraps workflow in structured try/catch/finally. |
+| **4. Workflow** | Orchestration Flow | `NetworkSpecWorkflow.execute_dataset_training_flow(ctx, command)` | Retrieves existing spec from repository, orchestrates compute adapter, and enforces state machine transitions. |
+| **5. Port** | Driven Port Contract | `NeuralComputePort.fit_dataset(...)` | Abstract contract boundary isolating domain logic from the underlying PyTorch tensor engine. |
+| **6. Adapter** | PyTorch Adapter | `PyTorchNeuralComputeAdapter.fit_dataset(...)` | Builds PyTorch module, initialises AdamW optimizer, streams DataLoader minibatches, and computes epoch gradients. |
+| **7. Architecture** | PyTorch Core | `PyTorchNeuralArchitecture.forward(x)` | Applies sequential encoder projection, LayerNorm, GELU, and residual blocks to produce output logits. |
+| **8. Backprop** | PyTorch Autograd | `loss.backward()` & `nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)` | Computes backward adjoint derivatives across all parameter tensors and clips gradient explosions. |
+| **9. Optimizer** | PyTorch Optimizer | `optimizer.step()` & `optimizer.zero_grad()` | Updates weight tensors using momentum and decoupled weight decay ($W_{t+1} = W_t - \eta \nabla L - \lambda W_t$). |
+| **10. Validation** | Evaluation Engine | `torch.no_grad()` & `criterion(val_logits, y_val)` | Evaluates generalization error and multiclass accuracy on strictly held-out validation tensors. |
+| **11. Storage** | Persistence & Hashing | `torch.save(...)` & `hashlib.sha256().hexdigest()` | Atomically writes `.pt` checkpoint file with model weights, optimizer state, and returns verified SHA-256 digest. |
+| **12. State Machine**| Pure Transition Machine | `NetworkSpecMachine.transition(current_state, "TRAINED")` | Deterministically transitions specification state to `STATUS_TRAINED` and commits update to repository. |
+
 ---
 
 ## 5. Most Critical Parts, Ranked
