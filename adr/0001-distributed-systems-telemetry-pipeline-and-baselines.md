@@ -365,7 +365,7 @@ This ASCII decision tree defines the deterministic logic gates executed across e
 
 ### 4.3 End-to-End Runtime Function Call Stack
 
-The table below catalogs the exact, deterministic call stack executed by the engine from ingress to weight serialization:
+The table and trace below catalog the exact, deterministic call stack executed by the engine across every hexagonal layer from ingress to weight serialization:
 
 | Level | Subsystem / Layer | Function / Method Signature | Exact Execution Responsibility |
 | :--- | :--- | :--- | :--- |
@@ -381,6 +381,119 @@ The table below catalogs the exact, deterministic call stack executed by the eng
 | **10. Validation** | Evaluation Engine | `torch.no_grad()` & `criterion(val_logits, y_val)` | Evaluates generalization error and multiclass accuracy on strictly held-out validation tensors. |
 | **11. Storage** | Persistence & Hashing | `torch.save(...)` & `hashlib.sha256().hexdigest()` | Atomically writes `.pt` checkpoint file with model weights, optimizer state, and returns verified SHA-256 digest. |
 | **12. State Machine**| Pure Transition Machine | `NetworkSpecMachine.transition(current_state, "TRAINED")` | Deterministically transitions specification state to `STATUS_TRAINED` and commits update to repository. |
+
+#### Detailed Runtime Function Call Stack Trace
+
+```text
+[POST /v1/network-spec/train]
+ │
+ ├── 1. Ingress Delivery Layer (FastAPI Router)
+ │    │  File: src/api/rest/v1/routers/network_spec_router.py
+ │    │  Function: train_dataset(request: Request, response: Response)
+ │    │  Context: Extracts W3C header 'traceparent' -> constructs TraceContext(trace_id=...)
+ │    │
+ │    └──> 2. API Handler Layer
+ │          │  File: src/api/rest/v1/handlers/network_spec_handler.py
+ │          │  Function: NetworkSpecHandler.handle_train_dataset(ctx, payload)
+ │          │
+ │          ├──> 3. Schema Parsing and Bounds Validation
+ │          │     │  File: src/features/network_spec/schema/network_spec_schema.py
+ │          │     │  Function: NetworkSpecSchema.parse_training_command(payload)
+ │          │     │  Assertions:
+ │          │     │    - spec_id is valid non-empty string
+ │          │     │    - len(train_samples) > 0 and len(val_samples) > 0
+ │          │     │    - epochs > 0, batch_size > 0, learning_rate > 0
+ │          │     │  Returns: DatasetTrainingCommand (immutable frozen dataclass)
+ │          │     │
+ │          └──> 4. Domain Service Orchestration (With Tracing Boundary)
+ │                │  File: src/features/network_spec/service/network_spec_service.py
+ │                │  Function: NetworkSpecService.train_dataset(ctx, command)
+ │                │  Tracing: Tracer.start_span("network_spec.train_dataset", ctx) as child_ctx
+ │                │  Error Boundary: Structured try / catch(ApplicationError) / finally(span.end)
+ │                │
+ │                └──> 5. Domain Workflow Layer
+ │                      │  File: src/features/network_spec/workflows/network_spec_workflow.py
+ │                      │  Function: NetworkSpecWorkflow.execute_dataset_training_flow(ctx, command)
+ │                      │
+ │                      ├──> 6. Repository Entity Retrieval
+ │                      │     │  File: src/features/network_spec/repository/network_spec_repository.py
+ │                      │     │  Port Call: NetworkSpecRepositoryPort.find_by_id(ctx, command.spec_id)
+ │                      │     │  Returns: NetworkSpecModel (status="PENDING" or "TINY_BATCH_OVERFIT_VERIFIED")
+ │                      │     │
+ │                      ├──> 7. Compute Driven Port Invocation
+ │                      │     │  Port Interface: NeuralComputePort.fit_dataset(...)
+ │                      │     │  Adapter Impl: PyTorchNeuralComputeAdapter.fit_dataset(...)
+ │                      │     │  File: src/features/network_spec/repository/neural_compute_adapter.py
+ │                      │     │
+ │                      │     ├──> 8. PyTorch Module Instantiation
+ │                      │     │     │  Class: PyTorchNeuralArchitecture(input_dim, hidden_dim, num_classes, layer_count)
+ │                      │     │     │  Submodules:
+ │                      │     │     │    - Linear(input_dim, hidden_dim) -> LayerNorm -> GELU
+ │                      │     │     │    - ResidualBlock(hidden_dim) x layer_count
+ │                      │     │     │    - Linear(hidden_dim, num_classes)
+ │                      │     │     │  Weight Init: Kaiming uniform (He) on Linear weights, 0.0 on biases
+ │                      │     │     │
+ │                      │     ├──> 9. Dataset Batching and Loader Setup
+ │                      │     │     │  Tensor Conversion: x_train, y_train, x_val, y_val -> torch.Tensor(dtype=float32/long)
+ │                      │     │     │  Dataset: TensorDataset(x_train, y_train)
+ │                      │     │     │  Loader: DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+ │                      │     │     │
+ │                      │     ├──> 10. Multi-Epoch Training Loop
+ │                      │     │     │  For epoch in range(epochs):
+ │                      │     │     │    For batch_x, batch_y in loader:
+ │                      │     │     │      ├── optimizer.zero_grad()
+ │                      │     │     │      ├── logits = net(batch_x)
+ │                      │     │     │      ├── loss = criterion(logits, batch_y)
+ │                      │     │     │      ├── loss.backward()
+ │                      │     │     │      ├── torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
+ │                      │     │     │      └── optimizer.step()
+ │                      │     │     │
+ │                      │     ├──> 11. Generalization Validation Loop
+ │                      │     │     │  net.eval()
+ │                      │     │     │  with torch.no_grad():
+ │                      │     │     │    val_logits = net(x_val)
+ │                      │     │     │    val_loss = criterion(val_logits, y_val).item()
+ │                      │     │     │    val_accuracy = (argmax(val_logits) == y_val).sum() / N
+ │                      │     │     │
+ │                      │     └──> 12. Atomic Weight Serialization and Cryptographic Hashing
+ │                      │           │  torch.save({"model_state_dict": net.state_dict(), ...}, ckpt_path)
+ │                      │           │  hasher = hashlib.sha256() -> hasher.update(file_bytes)
+ │                      │           │  Returns: (epochs, train_loss, val_loss, val_accuracy, ckpt_path, sha256_hex)
+ │                      │           │
+ │                      ├──> 13. State Machine State Promotion
+ │                      │     │  File: src/features/network_spec/machines/network_spec_machine.py
+ │                      │     │  Function: NetworkSpecMachine.transition(existing.status, "TRAINED")
+ │                      │     │  Validation: Asserts transition is permitted in _VALID_TRANSITIONS table
+ │                      │     │  Returns: "TRAINED"
+ │                      │     │
+ │                      ├──> 14. Repository Entity Update
+ │                      │     │  File: src/features/network_spec/repository/network_spec_repository.py
+ │                      │     │  Port Call: NetworkSpecRepositoryPort.save(ctx, updated_model)
+ │                      │     │  Returns: NetworkSpecModel(status="TRAINED")
+ │                      │     │
+ │                      └──> 15. DTO Assembly
+ │                            │  Returns: tuple[NetworkSpecModel, DatasetTrainingResult]
+ │
+ └── 16. Response Serialization (Back to Delivery Layer)
+      │  File: src/features/network_spec/schema/network_spec_schema.py
+      │  Function: NetworkSpecSchema.training_result_to_api(result)
+      │  Payload:
+      │    {
+      │      "success": true,
+      │      "data": {
+      │        "spec_id": "...",
+      │        "trained_epochs": 10,
+      │        "train_loss": 0.042,
+      │        "val_loss": 0.051,
+      │        "val_accuracy": 0.985,
+      │        "checkpoint_path": "checkpoints/uuid.pt",
+      │        "checkpoint_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12..."
+      │      },
+      │      "meta": { "trace_id": "..." }
+      │    }
+      │
+      [HTTP 200 OK Response Emitted to Ingress Client]
+```
 
 ---
 
