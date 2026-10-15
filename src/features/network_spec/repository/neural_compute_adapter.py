@@ -27,6 +27,20 @@ class NeuralComputePort(ABC):
         pass
 
     @abstractmethod
+    def fit_dataset(
+        self,
+        model_spec: NetworkSpecModel,
+        train_samples: list[tuple[list[float], int]],
+        val_samples: list[tuple[list[float], int]],
+        epochs: int,
+        batch_size: int,
+        learning_rate: float,
+        weight_decay: float,
+        checkpoint_dir: str,
+    ) -> tuple[int, float, float, float, str, str]:
+        pass
+
+    @abstractmethod
     def save_checkpoint(self, spec_id: str, checkpoint_dir: str) -> str:
         pass
 
@@ -130,6 +144,88 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
             self._active_optimizer = optimizer
 
         return initial_loss, final_loss, steps, is_overfit
+
+    def fit_dataset(
+        self,
+        model_spec: NetworkSpecModel,
+        train_samples: list[tuple[list[float], int]],
+        val_samples: list[tuple[list[float], int]],
+        epochs: int,
+        batch_size: int,
+        learning_rate: float,
+        weight_decay: float,
+        checkpoint_dir: str,
+    ) -> tuple[int, float, float, float, str, str]:
+        import hashlib
+        device = torch.device("cpu")
+        net = PyTorchNeuralArchitecture(
+            input_dim=model_spec.input_dim,
+            hidden_dim=model_spec.hidden_dim,
+            num_classes=model_spec.num_classes,
+            layer_count=model_spec.layer_count,
+        ).to(device)
+        net.train()
+
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+        x_train = torch.tensor([s[0] for s in train_samples], dtype=torch.float32, device=device)
+        y_train = torch.tensor([s[1] for s in train_samples], dtype=torch.long, device=device)
+        x_val = torch.tensor([s[0] for s in val_samples], dtype=torch.float32, device=device)
+        y_val = torch.tensor([s[1] for s in val_samples], dtype=torch.long, device=device)
+
+        train_ds = torch.utils.data.TensorDataset(x_train, y_train)
+        loader = torch.utils.data.DataLoader(
+            train_ds, batch_size=max(1, batch_size), shuffle=True
+        )
+
+        final_train_loss = 0.0
+        for _ in range(epochs):
+            net.train()
+            epoch_loss = 0.0
+            batch_count = 0
+            for batch_x, batch_y in loader:
+                optimizer.zero_grad()
+                logits = net(batch_x)
+                loss = criterion(logits, batch_y)
+                loss.backward()
+                nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
+                optimizer.step()
+                epoch_loss += float(loss.item())
+                batch_count += 1
+            final_train_loss = epoch_loss / max(1, batch_count)
+
+        net.eval()
+        with torch.no_grad():
+            val_logits = net(x_val)
+            val_loss = float(criterion(val_logits, y_val).item())
+            preds = torch.argmax(val_logits, dim=-1)
+            correct = (preds == y_val).sum().item()
+            val_accuracy = float(correct) / max(1, len(val_samples))
+
+        self._active_model = net
+        self._active_optimizer = optimizer
+
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        ckpt_path = os.path.join(checkpoint_dir, f"{model_spec.id}.pt")
+        torch.save(
+            {
+                "spec_id": model_spec.id,
+                "model_state_dict": net.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "train_loss": final_train_loss,
+                "val_loss": val_loss,
+                "val_accuracy": val_accuracy,
+            },
+            ckpt_path,
+        )
+
+        hasher = hashlib.sha256()
+        with open(ckpt_path, "rb") as f:
+            hasher.update(f.read())
+        sha256_hex = hasher.hexdigest()
+
+        return epochs, final_train_loss, val_loss, val_accuracy, ckpt_path, sha256_hex
 
     def save_checkpoint(self, spec_id: str, checkpoint_dir: str) -> str:
         if self._active_model is None:

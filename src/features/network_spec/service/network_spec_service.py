@@ -2,6 +2,8 @@ from src.features.network_spec.types.network_spec_types import (
     NetworkSpecCreateDTO,
     NetworkSpecModel,
     TinyBatchOverfitCommand,
+    DatasetTrainingCommand,
+    DatasetTrainingResult,
 )
 from src.features.network_spec.workflows.network_spec_workflow import NetworkSpecWorkflow
 from src.features.network_spec.repository.neural_compute_adapter import (
@@ -43,6 +45,18 @@ class NetworkSpecService:
             try:
                 model = await self._workflow.execute_overfit_verification_flow(child_ctx, command)
                 return Result.ok(model)
+            except ApplicationError as err:
+                return Result.err(err)
+            except Exception as ex:
+                return Result.err(ApplicationError(str(ex)))
+
+    async def train_dataset(
+        self, ctx: TraceContext, command: DatasetTrainingCommand
+    ) -> Result[DatasetTrainingResult, ApplicationError]:
+        with Tracer.start_span("network_spec.train_dataset", ctx=ctx) as child_ctx:
+            try:
+                _, result = await self._workflow.execute_dataset_training_flow(child_ctx, command)
+                return Result.ok(result)
             except ApplicationError as err:
                 return Result.err(err)
             except Exception as ex:

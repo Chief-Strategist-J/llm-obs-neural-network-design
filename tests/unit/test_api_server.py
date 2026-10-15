@@ -12,7 +12,7 @@ async def test_health_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_network_spec_creation_and_overfit_api():
+async def test_network_spec_creation_and_overfit_api(tmp_path):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         create_payload = {
             "name": "RestApiResidualNet",
@@ -46,6 +46,31 @@ async def test_network_spec_creation_and_overfit_api():
         assert overfit_data["is_overfit_verified"] is True
         assert overfit_data["status"] == "TINY_BATCH_OVERFIT_VERIFIED"
         assert overfit_data["final_loss"] <= 0.08
+
+        train_payload = {
+            "spec_id": spec_id,
+            "epochs": 3,
+            "batch_size": 4,
+            "target_checkpoint_dir": str(tmp_path / "checkpoints"),
+            "train_samples": [
+                {"features": [1.0, 0.0, -1.0, 0.5], "label": 0},
+                {"features": [0.0, 1.0, 1.0, -0.5], "label": 1},
+                {"features": [1.2, -0.1, -0.8, 0.4], "label": 0},
+                {"features": [-0.2, 0.9, 1.1, -0.4], "label": 1},
+            ],
+            "val_samples": [
+                {"features": [1.0, 0.0, -1.0, 0.5], "label": 0},
+                {"features": [0.0, 1.0, 1.0, -0.5], "label": 1},
+            ],
+        }
+        train_res = await ac.post("/v1/network-spec/train", json=train_payload)
+        assert train_res.status_code == 200
+        train_data = train_res.json()["data"]
+        assert train_data["spec_id"] == spec_id
+        assert train_data["trained_epochs"] == 3
+        assert "checkpoint_path" in train_data
+        assert "checkpoint_sha256" in train_data
+
 
 
 @pytest.mark.asyncio

@@ -46,3 +46,19 @@ async def verify_overfit(request: Request, response: Response):
         "meta": result.meta,
         "error": result.error,
     }
+
+
+@router.post("/train", status_code=status.HTTP_200_OK)
+async def train_dataset(request: Request, response: Response):
+    payload = await request.json()
+    ctx = getattr(request.state, "trace_context", None) or TraceContext(
+        trace_id=request.headers.get("traceparent", "trace-synthetic-001")
+    )
+    status_code, result = await _handler.handle_train_dataset(ctx, payload)
+    response.status_code = status_code
+    return {
+        "success": result.success,
+        "data": result.data,
+        "meta": result.meta,
+        "error": result.error,
+    }

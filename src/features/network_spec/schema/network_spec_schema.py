@@ -1,10 +1,12 @@
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from src.shared.errors.app_errors import ValidationError
 from src.features.network_spec.types.network_spec_types import (
     NetworkSpecCreateDTO,
     NetworkSpecModel,
     TelemetrySampleDTO,
     TinyBatchOverfitCommand,
+    DatasetTrainingCommand,
+    DatasetTrainingResult,
 )
 
 
@@ -75,6 +77,48 @@ class NetworkSpecSchema:
         )
 
     @staticmethod
+    def parse_training_command(payload: Mapping[str, Any]) -> DatasetTrainingCommand:
+        spec_id = payload.get("spec_id")
+        raw_train = payload.get("train_samples")
+        raw_val = payload.get("val_samples")
+        epochs = payload.get("epochs", 10)
+        batch_size = payload.get("batch_size", 32)
+        lr = payload.get("learning_rate", 0.001)
+        decay = payload.get("weight_decay", 1e-4)
+        ckpt_dir = payload.get("target_checkpoint_dir", "checkpoints")
+
+        if not spec_id:
+            raise ValidationError("Field 'spec_id' is required.")
+        if not isinstance(raw_train, (list, tuple)) or len(raw_train) == 0:
+            raise ValidationError("Field 'train_samples' must contain at least 1 sample.")
+        if not isinstance(raw_val, (list, tuple)) or len(raw_val) == 0:
+            raise ValidationError("Field 'val_samples' must contain at least 1 sample.")
+
+        def _parse_samples(raw_list: Sequence[Any]) -> list[TelemetrySampleDTO]:
+            parsed: list[TelemetrySampleDTO] = []
+            for item in raw_list:
+                if not isinstance(item, dict):
+                    raise ValidationError("Each sample must be an object.")
+                parsed.append(
+                    TelemetrySampleDTO(
+                        features=tuple(float(x) for x in item.get("features", [])),
+                        label=int(item.get("label", 0)),
+                    )
+                )
+            return parsed
+
+        return DatasetTrainingCommand(
+            spec_id=str(spec_id),
+            train_samples=tuple(_parse_samples(raw_train)),
+            val_samples=tuple(_parse_samples(raw_val)),
+            epochs=int(epochs),
+            batch_size=int(batch_size),
+            learning_rate=float(lr),
+            weight_decay=float(decay),
+            target_checkpoint_dir=str(ckpt_dir),
+        )
+
+    @staticmethod
     def to_api(model: NetworkSpecModel) -> Mapping[str, Any]:
         return {
             "id": model.id,
@@ -90,4 +134,16 @@ class NetworkSpecSchema:
             "final_loss": model.final_loss,
             "steps_taken": model.steps_taken,
             "is_overfit_verified": model.is_overfit_verified,
+        }
+
+    @staticmethod
+    def training_result_to_api(res: DatasetTrainingResult) -> Mapping[str, Any]:
+        return {
+            "spec_id": res.spec_id,
+            "trained_epochs": res.trained_epochs,
+            "train_loss": res.train_loss,
+            "val_loss": res.val_loss,
+            "val_accuracy": res.val_accuracy,
+            "checkpoint_path": res.checkpoint_path,
+            "checkpoint_sha256": res.checkpoint_sha256,
         }

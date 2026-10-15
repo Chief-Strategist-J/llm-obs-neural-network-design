@@ -78,3 +78,38 @@ class NetworkSpecHandler:
                 meta={"trace_id": ctx.trace_id},
                 error={"code": "INTERNAL_SERVER_ERROR", "message": str(ex)},
             )
+
+    async def handle_train_dataset(
+        self, ctx: TraceContext, payload: Mapping[str, Any]
+    ) -> tuple[int, ApiResponse[Mapping[str, Any]]]:
+        try:
+            cmd = NetworkSpecSchema.parse_training_command(payload)
+            result = await self._service.train_dataset(ctx, cmd)
+            if result.is_ok and result.value:
+                res_data = NetworkSpecSchema.training_result_to_api(result.value)
+                return 200, ApiResponse(
+                    success=True,
+                    data=res_data,
+                    meta={"trace_id": ctx.trace_id},
+                )
+            err = result.error or ApplicationError("Dataset training failed")
+            return err.status_code, ApiResponse(
+                success=False,
+                data=None,
+                meta={"trace_id": ctx.trace_id},
+                error={"code": err.canonical_code, "message": err.message},
+            )
+        except ApplicationError as app_err:
+            return app_err.status_code, ApiResponse(
+                success=False,
+                data=None,
+                meta={"trace_id": ctx.trace_id},
+                error={"code": app_err.canonical_code, "message": app_err.message},
+            )
+        except Exception as ex:
+            return 500, ApiResponse(
+                success=False,
+                data=None,
+                meta={"trace_id": ctx.trace_id},
+                error={"code": "INTERNAL_SERVER_ERROR", "message": str(ex)},
+            )

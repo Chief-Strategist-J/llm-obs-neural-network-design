@@ -131,3 +131,60 @@ async def test_service_creation_and_pytorch_overfit():
     assert overfit_res.value.is_overfit_verified is True
     assert overfit_res.value.final_loss <= 0.08
     assert overfit_res.value.status == STATUS_TINY_BATCH_OVERFIT_VERIFIED
+
+
+@pytest.mark.asyncio
+async def test_service_dataset_training_and_checkpoint_persistence(tmp_path):
+    from src.features.network_spec.types.network_spec_types import DatasetTrainingCommand
+    import os
+
+    repo = InMemoryNetworkSpecRepository()
+    compute = PyTorchNeuralComputeAdapter()
+    service = NetworkSpecService(repository=repo, compute=compute)
+    ctx = TraceContext(trace_id="test-trace-train")
+
+    dto = NetworkSpecCreateDTO(
+        name="ProductionDatasetNet",
+        architecture_type="mlp",
+        input_dim=4,
+        hidden_dim=16,
+        num_classes=2,
+        layer_count=1,
+        parameter_budget=50_000,
+    )
+    created = await service.create_network_spec(ctx, dto)
+    assert created.is_ok is True
+    spec_id = created.value.id
+
+    train_samples = tuple(
+        TelemetrySampleDTO(features=(float(i), float(i % 2), -0.5, 0.2), label=i % 2)
+        for i in range(40)
+    )
+    val_samples = tuple(
+        TelemetrySampleDTO(features=(float(i), float(i % 2), -0.5, 0.2), label=i % 2)
+        for i in range(10)
+    )
+
+    ckpt_dir = str(tmp_path / "checkpoints")
+    cmd = DatasetTrainingCommand(
+        spec_id=spec_id,
+        train_samples=train_samples,
+        val_samples=val_samples,
+        epochs=5,
+        batch_size=8,
+        learning_rate=0.01,
+        weight_decay=1e-4,
+        target_checkpoint_dir=ckpt_dir,
+    )
+
+    train_res = await service.train_dataset(ctx, cmd)
+    assert train_res.is_ok is True
+    assert train_res.value is not None
+    assert train_res.value.trained_epochs == 5
+    assert os.path.exists(train_res.value.checkpoint_path)
+    assert len(train_res.value.checkpoint_sha256) == 64
+
+    stored_spec = await repo.find_by_id(ctx, spec_id)
+    assert stored_spec is not None
+    assert stored_spec.status == "TRAINED"
+

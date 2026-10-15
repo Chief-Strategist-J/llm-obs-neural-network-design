@@ -45,3 +45,26 @@ class TinyBatchOverfitCommand:
     samples: Sequence[TelemetrySampleDTO]
     max_steps: int = 50
     target_loss_threshold: float = 0.08
+
+
+@dataclass(frozen=True)
+class DatasetTrainingCommand:
+    spec_id: str
+    train_samples: Sequence[TelemetrySampleDTO]
+    val_samples: Sequence[TelemetrySampleDTO]
+    epochs: int = 10
+    batch_size: int = 32
+    learning_rate: float = 0.001
+    weight_decay: float = 1e-4
+    target_checkpoint_dir: str = "checkpoints"
+
+
+@dataclass(frozen=True)
+class DatasetTrainingResult:
+    spec_id: str
+    trained_epochs: int
+    train_loss: float
+    val_loss: float
+    val_accuracy: float
+    checkpoint_path: str
+    checkpoint_sha256: str
