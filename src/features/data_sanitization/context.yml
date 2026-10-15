@@ -1,0 +1,9 @@
+feature_name: data_sanitization
+bounded_context: neural_network_design
+description: Telemetry data cleaning, NaN/Inf imputation, outlier winsorization, and classification feature normalization.
+ports:
+  - repository.data_sanitization_repository_port
+invariants:
+  - all features must be finite and free of NaN or Inf
+  - normalization statistics must be fitted strictly on training splits
+  - classification labels must be non-negative integers within target class bounds
