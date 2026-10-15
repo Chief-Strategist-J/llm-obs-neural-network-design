@@ -850,28 +850,9 @@ erDiagram
 
 ---
 
-## 11. What We Have vs. What We Do NOT Have
+## 11. Database Tables and Migration Specifications
 
-| Component | Status | Location / Implementation | Rationale |
-|---|---|---|---|
-| **Leak-Free Causal Split Engine** | **HAVE** | `src/features/system_telemetry_pipeline/rules/telemetry_split_rules.py` | Eliminates cross-trace data contamination and temporal lookahead leakage. |
-| **Automated Trivial Baseline Engine** | **HAVE** | `src/features/system_telemetry_pipeline/workflows/trivial_baseline_workflow.py` | Proves whether neural learning yields positive information gain over simple heuristics. |
-| **PyTorch Residual Tensor Architecture** | **HAVE** | `src/features/network_spec/repository/neural_compute_adapter.py` (`PyTorchNeuralArchitecture`) | Implements stable Kaiming init, LayerNorm, GELU, and residual skip connections. |
-| **Tiny-Batch Overfit Verification Gate** | **HAVE** | `src/features/network_spec/workflows/network_spec_workflow.py` (`execute_overfit_verification_flow`) | Catches broken gradient graphs before spinning up expensive GPU clusters. |
-| **Autonomous Self-Learning Feedback Loop** | **HAVE** | Integrated pipeline monitoring drift and retraining through `system_telemetry_pipeline` | Continuously updates weights from edge-case telemetry errors without manual intervention. |
-| **Consolidated Feature Boundaries** | **HAVE** | `system_telemetry_pipeline` (data) + `network_spec` (architecture) | Strictly enforces SRP and avoids fragmented, redundant micro-packages. |
-| **Centralized OpenTelemetry Tracing** | **HAVE** | `src/infra/observability/tracer.py` linked to `python-shared` | Preserves W3C `traceparent` across all domain services and workflows. |
-| **Multi-Stage Containerization** | **HAVE** | `Dockerfile`, `Dockerfile.dev`, `deploy/docker/docker-compose.yaml` | Production deployment isolation on `llmobs-network`. |
-| **Unconstrained Deep Auto-Tuning** | **DO NOT HAVE** | *Deliberately Excluded* | Tuning 100+ layers before baseline validation guarantees overfitting on noise. |
-| **Random I.I.D. Train/Test Splitters** | **DO NOT HAVE** | *Deliberately Forbidden* | Random splitting on distributed traces guarantees data leakage and invalid metrics. |
-| **In-Memory Mutable Backend State** | **DO NOT HAVE** | *Deliberately Forbidden* | Backend features are 100% stateless; state is preserved in immutable DTOs and databases. |
-| **Floating-Point Identity Keys** | **DO NOT HAVE** | *Deliberately Forbidden* | Floating-point values are never used for identity keys or indexing (per `05-enforced-constraints.md`). |
-
----
-
-## 12. Database Tables and Migration Specifications
-
-### 12.1 SQL Migration (`database/migrations/0001_init.sql`)
+### 11.1 SQL Migration (`database/migrations/0001_init.sql`)
 ```sql
 CREATE TABLE IF NOT EXISTS network_specs (
     id VARCHAR(64) PRIMARY KEY,
@@ -915,9 +896,9 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 
 ---
 
-## 13. API Contracts and Envelope JSON Specifications
+## 12. API Contracts and Envelope JSON Specifications
 
-### 13.1 Pipeline Ingress: `POST /v1/telemetry-pipeline`
+### 12.1 Pipeline Ingress: `POST /v1/telemetry-pipeline`
 **Request Payload**:
 ```json
 {
@@ -975,7 +956,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 }
 ```
 
-### 13.2 Network Spec Ingress: `POST /v1/network-spec`
+### 12.2 Network Spec Ingress: `POST /v1/network-spec`
 **Request Payload**:
 ```json
 {
@@ -1015,7 +996,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 }
 ```
 
-### 13.3 Tiny-Batch Overfit Command: `POST /v1/network-spec/verify-overfit`
+### 12.3 Tiny-Batch Overfit Command: `POST /v1/network-spec/verify-overfit`
 **Request Payload**:
 ```json
 {
@@ -1059,7 +1040,7 @@ CREATE INDEX IF NOT EXISTS idx_baseline_pipeline_id ON baseline_benchmarks (pipe
 
 ---
 
-## 14. Consequences and Trade-Offs
+## 13. Consequences and Trade-Offs
 
 ### Positive
 - **Guaranteed Zero Leakage**: Eliminates synthetic test accuracy inflation caused by trace correlation or lookahead bias.
