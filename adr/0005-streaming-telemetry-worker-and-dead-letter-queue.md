@@ -200,6 +200,50 @@ classDiagram
     StreamingTelemetryWorkerService ..> DeadLetterMessageDTO : routes
 ```
 
+### 5.2 Entity-Relationship Diagram (ERD)
+
+```mermaid
+erDiagram
+    MICRO_BATCH ||--|{ TELEMETRY_SPAN : contains
+    DEAD_LETTER_MESSAGE }|--|| KAFKA_TOPIC : routed_from
+    WORKER_METRICS ||--o{ MICRO_BATCH : tracks
+
+    MICRO_BATCH {
+        string batch_id PK
+        string created_at_iso
+        int trace_count
+        int total_spans
+    }
+
+    TELEMETRY_SPAN {
+        string span_id PK
+        string trace_id FK
+        int timestamp_epoch_ms
+        float_array features
+        int target_label
+        string service_name
+    }
+
+    DEAD_LETTER_MESSAGE {
+        string dlq_id PK
+        string original_topic
+        int partition
+        string offset
+        string raw_payload_utf8
+        string error_reason
+        string failed_at_iso
+    }
+
+    WORKER_METRICS {
+        int total_consumed
+        int total_batched
+        int total_dlq_routed
+        int total_batches_dispatched
+        int current_buffer_size
+        string status
+    }
+```
+
 ---
 
 ## 6. Mathematical Formulations
