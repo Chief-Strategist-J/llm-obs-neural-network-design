@@ -1,0 +1,11 @@
+feature_name: streaming_baselines
+bounded_context: neural_network_design
+description: Wire-speed Tier 1 streaming statistical filters (EWMA, CUSUM, rolling quantile estimators) to bypass deep neural inference on benign telemetry.
+ports:
+  - repository.streaming_baseline_repository_port
+invariants:
+  - single-span heuristic evaluation must execute in under 15 microseconds on CPU
+  - streaming baseline state updates must maintain strictly O(1) space complexity per metric
+  - smoothing factor alpha must reside in the closed interval [0.01, 1.0]
+  - CUSUM slack parameter k and threshold h must be strictly positive floats
+  - fast-path decisions must classify spans as BENIGN, ANOMALOUS, or AMBIGUOUS
