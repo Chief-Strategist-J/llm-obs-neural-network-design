@@ -6,9 +6,20 @@ routes:
   health: "/health"
   network_spec: "/v1/network-spec"
   network_spec_verify_overfit: "/v1/network-spec/verify-overfit"
+  network_spec_train: "/v1/network-spec/train"
   telemetry_pipeline: "/v1/telemetry-pipeline"
+  data_sanitization_profile: "/v1/data-sanitization/profile"
+  data_sanitization_transform: "/v1/data-sanitization/transform"
 database:
+  url: "postgresql://alloy_admin:alloysecret@localhost:5432/policy_orchestration"
   pool_size: 10
   timeout_ms: 5000
+messaging:
+  kafka_bootstrap_servers: "localhost:9092"
+  raw_telemetry_topic: "telemetry.spans.raw"
+  sanitized_telemetry_topic: "telemetry.spans.sanitized"
+  consumer_group: "neural-network-telemetry-group"
 observability:
   service_name: "neural-network-design"
+  otlp_endpoint: "http://localhost:4317"
+
