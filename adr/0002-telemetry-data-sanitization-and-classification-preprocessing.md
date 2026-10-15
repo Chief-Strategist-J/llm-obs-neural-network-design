@@ -324,7 +324,7 @@ The robust mean $\mu_j$ and unbiased sample variance $s_j^2$ are formulated as:
 $$\mu_j = \frac{1}{|S_j|} \sum_{x \in S_j} x$$
 $$s_j^2 = \frac{1}{|S_j| - 1} \sum_{x \in S_j} (x - \mu_j)^2, \quad \sigma_j = \sqrt{s_j^2}$$
 
-If $|S_j| < 2$ or $\sigma_j < 10^{-8}$, the column is marked dead: $\text{is\_constant}_j = \text{True}, \sigma_j = 1.0$.
+If $|S_j| < 2$ or $\sigma_j < 10^{-8}$, the column is marked dead: $\mathrm{is\_constant}_j = \mathrm{True}, \sigma_j = 1.0$.
 
 #### 3. Algorithm Flow Diagram
 
@@ -438,7 +438,7 @@ If one feature is measured in nanoseconds ($10^9$) and another is measured in pe
 #### 2. Technical Definition
 Standardizes non-constant feature coordinates to zero empirical mean and unit variance. Features with zero variance are safely mapped to zero to eliminate numerical singularity:
 $$z_{i,j} = \begin{cases} 
-0.0 & \text{if } \text{is\_constant}_j \\ 
+0.0 & \text{if } \mathrm{is\_constant}_j \\ 
 \frac{x_{i,j} - \mu_j}{\sigma_j} & \text{otherwise} 
 \end{cases}$$
 
