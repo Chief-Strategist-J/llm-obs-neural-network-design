@@ -1,12 +1,12 @@
 import pytest
 import json
-from src.features.streaming_telemetry_worker.rules.streaming_telemetry_worker_rules import (
+from src.features.streaming_telemetry_worker.domain.rules.streaming_telemetry_worker_rules import (
     parse_telemetry_span,
     should_flush_buffer,
     build_micro_batch,
     build_dead_letter_message,
 )
-from src.features.streaming_telemetry_worker.repository.streaming_telemetry_worker_repository import (
+from src.features.streaming_telemetry_worker.infrastructure.adapters.streaming_telemetry_worker_repository import (
     InMemoryStreamingTelemetryWorkerRepository,
 )
 from src.features.streaming_telemetry_worker.service.streaming_telemetry_worker_service import (

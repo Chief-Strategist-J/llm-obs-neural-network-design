@@ -1,19 +1,19 @@
 import math
 import pytest
-from src.features.data_sanitization.types.data_sanitization_types import (
+from src.features.data_sanitization.contracts.data_sanitization_types import (
     SanitizationConfigDTO,
 )
-from src.features.data_sanitization.rules.data_sanitization_rules import (
+from src.features.data_sanitization.domain.rules.data_sanitization_rules import (
     DataSanitizationRules,
 )
-from src.features.data_sanitization.machines.data_sanitization_machine import (
+from src.features.data_sanitization.domain.machines.data_sanitization_machine import (
     DataSanitizationMachine,
     STATUS_RAW,
     STATUS_FITTED,
     STATUS_ACTIVE,
     STATUS_DEPRECATED,
 )
-from src.features.data_sanitization.repository.data_sanitization_repository import (
+from src.features.data_sanitization.infrastructure.adapters.data_sanitization_repository_adapter import (
     InMemoryDataSanitizationRepository,
 )
 from src.features.data_sanitization.service.data_sanitization_service import (

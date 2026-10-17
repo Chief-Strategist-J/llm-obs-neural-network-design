@@ -1,11 +1,11 @@
-from src.features.system_telemetry_pipeline.types.telemetry_pipeline_types import (
+from src.features.system_telemetry_pipeline.contracts.telemetry_pipeline_types import (
     PipelineTaskSpecDTO,
     TelemetryPipelineModel,
 )
-from src.features.system_telemetry_pipeline.workflows.trivial_baseline_workflow import (
+from src.features.system_telemetry_pipeline.domain.workflows.trivial_baseline_workflow import (
     TrivialBaselineWorkflow,
 )
-from src.features.system_telemetry_pipeline.repository.telemetry_pipeline_repository_port import (
+from src.features.system_telemetry_pipeline.infrastructure.ports.telemetry_pipeline_repository_port import (
     TelemetryPipelineRepositoryPort,
 )
 from src.shared.types.envelope_types import TraceContext, Result

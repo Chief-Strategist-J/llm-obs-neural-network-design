@@ -1,15 +1,15 @@
 import math
 import pytest
-from src.features.streaming_baselines.types.streaming_baseline_types import (
+from src.features.streaming_baselines.contracts.streaming_baseline_types import (
     EWMAConfigDTO,
     CUSUMConfigDTO,
     StreamingFilterStateModel,
     FastPathDecision,
 )
-from src.features.streaming_baselines.rules.streaming_baseline_rules import (
+from src.features.streaming_baselines.domain.rules.streaming_baseline_rules import (
     StreamingBaselineRules,
 )
-from src.features.streaming_baselines.repository.streaming_baseline_repository import (
+from src.features.streaming_baselines.infrastructure.adapters.streaming_baseline_repository_adapter import (
     InMemoryStreamingBaselineRepository,
 )
 from src.features.streaming_baselines.service.streaming_baseline_service import (

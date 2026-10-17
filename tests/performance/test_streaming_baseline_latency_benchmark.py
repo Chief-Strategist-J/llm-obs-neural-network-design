@@ -1,8 +1,8 @@
 import time
-from src.features.streaming_baselines.rules.streaming_baseline_rules import (
+from src.features.streaming_baselines.domain.rules.streaming_baseline_rules import (
     StreamingBaselineRules,
 )
-from src.features.streaming_baselines.types.streaming_baseline_types import (
+from src.features.streaming_baselines.contracts.streaming_baseline_types import (
     EWMAConfigDTO,
     CUSUMConfigDTO,
     StreamingFilterStateModel,

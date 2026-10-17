@@ -1,8 +1,8 @@
 from typing import Any, Mapping
 from fastapi import APIRouter, Request, Response, status
 from src.features.data_sanitization.service.data_sanitization_service import DataSanitizationService
-from src.features.data_sanitization.repository.data_sanitization_repository import InMemoryDataSanitizationRepository
-from src.features.data_sanitization.types.data_sanitization_types import SanitizationConfigDTO
+from src.features.data_sanitization.infrastructure.adapters.data_sanitization_repository_adapter import InMemoryDataSanitizationRepository
+from src.features.data_sanitization.contracts.data_sanitization_types import SanitizationConfigDTO
 from src.shared.types.envelope_types import TraceContext
 from src.infra.config.config_loader import AppConfig
 

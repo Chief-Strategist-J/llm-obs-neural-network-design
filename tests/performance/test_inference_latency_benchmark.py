@@ -1,6 +1,6 @@
 import time
 import torch
-from src.features.network_spec.repository.neural_compute_adapter import (
+from src.features.network_spec.infrastructure.adapters.neural_compute_adapter import (
     PyTorchNeuralArchitecture,
 )
 

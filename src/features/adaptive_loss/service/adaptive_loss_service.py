@@ -1,7 +1,7 @@
 from typing import Sequence
-from src.features.adaptive_loss.types.adaptive_loss_types import ClassBalanceProfileModel
-from src.features.adaptive_loss.workflows.adaptive_loss_workflow import AdaptiveLossWorkflow
-from src.features.adaptive_loss.repository.adaptive_loss_repository import AdaptiveLossRepositoryPort
+from src.features.adaptive_loss.contracts.adaptive_loss_types import ClassBalanceProfileModel
+from src.features.adaptive_loss.domain.workflows.adaptive_loss_workflow import AdaptiveLossWorkflow
+from src.features.adaptive_loss.infrastructure.ports.adaptive_loss_repository_port import AdaptiveLossRepositoryPort
 from src.shared.types.envelope_types import TraceContext, Result
 from src.shared.errors.app_errors import ApplicationError
 from src.infra.observability.tracer import Tracer

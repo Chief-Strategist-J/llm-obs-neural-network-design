@@ -1,12 +1,12 @@
-from src.features.network_spec.types.network_spec_types import (
+from src.features.network_spec.contracts.network_spec_types import (
     NetworkSpecCreateDTO,
     NetworkSpecModel,
     TinyBatchOverfitCommand,
     DatasetTrainingCommand,
     DatasetTrainingResult,
 )
-from src.features.network_spec.workflows.network_spec_workflow import NetworkSpecWorkflow
-from src.features.network_spec.repository.neural_compute_adapter import (
+from src.features.network_spec.domain.workflows.network_spec_workflow import NetworkSpecWorkflow
+from src.features.network_spec.infrastructure.adapters.neural_compute_adapter import (
     NetworkSpecRepositoryPort,
     NeuralComputePort,
     PyTorchNeuralComputeAdapter,

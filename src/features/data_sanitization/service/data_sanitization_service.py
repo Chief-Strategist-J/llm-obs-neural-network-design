@@ -1,13 +1,13 @@
 from typing import Sequence
-from src.features.data_sanitization.types.data_sanitization_types import (
+from src.features.data_sanitization.contracts.data_sanitization_types import (
     SanitizationProfileModel,
     SanitizationConfigDTO,
     CleanedSampleDTO,
 )
-from src.features.data_sanitization.workflows.data_sanitization_workflow import (
+from src.features.data_sanitization.domain.workflows.data_sanitization_workflow import (
     DataSanitizationWorkflow,
 )
-from src.features.data_sanitization.repository.data_sanitization_repository import (
+from src.features.data_sanitization.infrastructure.adapters.data_sanitization_repository_adapter import (
     DataSanitizationRepositoryPort,
 )
 from src.shared.types.envelope_types import TraceContext, Result
@@ -57,8 +57,8 @@ class DataSanitizationService:
         feature_columns: Sequence[str],
         config: SanitizationConfigDTO | None = None,
     ) -> Result[SanitizationProfileModel, ApplicationError]:
-        from src.features.data_sanitization.rules.data_sanitization_rules import DataSanitizationRules
-        from src.features.data_sanitization.machines.data_sanitization_machine import STATUS_FITTED
+        from src.features.data_sanitization.domain.rules.data_sanitization_rules import DataSanitizationRules
+        from src.features.data_sanitization.domain.machines.data_sanitization_machine import STATUS_FITTED
         from src.shared.utils.date_utils import generate_uuidv7_str, get_utc_iso_timestamp
 
         with Tracer.start_span("data_sanitization.fit_polars", ctx=ctx) as child_ctx:

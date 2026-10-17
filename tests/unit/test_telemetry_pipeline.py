@@ -1,16 +1,16 @@
 import pytest
-from src.features.system_telemetry_pipeline.types.telemetry_pipeline_types import (
+from src.features.system_telemetry_pipeline.contracts.telemetry_pipeline_types import (
     TelemetryRecordDTO,
     PipelineTaskSpecDTO,
 )
-from src.features.system_telemetry_pipeline.rules.telemetry_split_rules import TelemetrySplitRules
+from src.features.system_telemetry_pipeline.domain.rules.telemetry_split_rules import TelemetrySplitRules
 from src.features.system_telemetry_pipeline.service.telemetry_pipeline_service import (
     TelemetryPipelineService,
 )
-from src.features.system_telemetry_pipeline.repository.telemetry_pipeline_repository import (
+from src.features.system_telemetry_pipeline.infrastructure.adapters.telemetry_pipeline_repository_adapter import (
     InMemoryTelemetryPipelineRepository,
 )
-from src.features.system_telemetry_pipeline.machines.telemetry_pipeline_machine import (
+from src.features.system_telemetry_pipeline.domain.machines.telemetry_pipeline_machine import (
     STATUS_BASELINE_ESTABLISHED,
 )
 from src.shared.types.envelope_types import TraceContext
@@ -33,7 +33,7 @@ def test_split_prevents_trace_leakage_and_temporal_lookahead():
 
 
 def test_leakage_detection_raises():
-    from src.features.system_telemetry_pipeline.types.telemetry_pipeline_types import DatasetSplitResult
+    from src.features.system_telemetry_pipeline.contracts.telemetry_pipeline_types import DatasetSplitResult
 
     leaky_split = DatasetSplitResult(
         train_records=(TelemetryRecordDTO("r1", "trace-shared", 1000, (0.1,), 0),),

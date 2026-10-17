@@ -1,6 +1,6 @@
 from typing import Any, Mapping
 from src.features.network_spec.service.network_spec_service import NetworkSpecService
-from src.features.network_spec.schema.network_spec_schema import NetworkSpecSchema
+from src.features.network_spec.contracts.network_spec_schema import NetworkSpecSchema
 from src.shared.types.envelope_types import TraceContext, ApiResponse
 from src.shared.errors.app_errors import ApplicationError
 

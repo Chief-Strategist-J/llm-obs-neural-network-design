@@ -1,18 +1,16 @@
-from src.features.streaming_baselines.types.streaming_baseline_types import (
+from src.features.streaming_baselines.contracts.streaming_baseline_types import (
     FastPathDecision,
     EWMAConfigDTO,
     CUSUMConfigDTO,
     StreamingFilterStateModel,
     FastPathTriageResultDTO,
 )
-from src.features.streaming_baselines.rules.streaming_baseline_rules import (
+from src.features.streaming_baselines.domain.rules.streaming_baseline_rules import (
     StreamingBaselineRules,
 )
-from src.features.streaming_baselines.repository.streaming_baseline_repository import (
-    StreamingBaselineRepositoryPort,
-    InMemoryStreamingBaselineRepository,
-)
-from src.features.streaming_baselines.workflows.streaming_filter_workflow import (
+from src.features.streaming_baselines.infrastructure.ports.streaming_baseline_repository_port import StreamingBaselineRepositoryPort
+from src.features.streaming_baselines.infrastructure.adapters.streaming_baseline_repository_adapter import InMemoryStreamingBaselineRepository
+from src.features.streaming_baselines.domain.workflows.streaming_filter_workflow import (
     StreamingFilterWorkflow,
 )
 from src.features.streaming_baselines.service.streaming_baseline_service import (

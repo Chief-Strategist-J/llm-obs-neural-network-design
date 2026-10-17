@@ -3,8 +3,8 @@ from fastapi import APIRouter, Request, Response, status
 from src.api.rest.v1.handlers.network_spec_handler import NetworkSpecHandler
 from src.shared.types.envelope_types import TraceContext
 from src.features.network_spec.service.network_spec_service import NetworkSpecService
-from src.features.network_spec.repository.network_spec_repository import InMemoryNetworkSpecRepository
-from src.features.network_spec.repository.neural_compute_adapter import PyTorchNeuralComputeAdapter
+from src.features.network_spec.infrastructure.adapters.network_spec_repository_adapter import InMemoryNetworkSpecRepository
+from src.features.network_spec.infrastructure.adapters.neural_compute_adapter import PyTorchNeuralComputeAdapter
 
 from src.infra.config.config_loader import AppConfig
 

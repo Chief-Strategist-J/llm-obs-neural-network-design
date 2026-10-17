@@ -1,12 +1,12 @@
 import pytest
-from src.features.network_spec.types.network_spec_types import (
+from src.features.network_spec.contracts.network_spec_types import (
     NetworkSpecCreateDTO,
     TelemetrySampleDTO,
     TinyBatchOverfitCommand,
 )
-from src.features.network_spec.schema.network_spec_schema import NetworkSpecSchema
-from src.features.network_spec.rules.network_spec_rules import NetworkSpecRules
-from src.features.network_spec.machines.network_spec_machine import (
+from src.features.network_spec.contracts.network_spec_schema import NetworkSpecSchema
+from src.features.network_spec.domain.rules.network_spec_rules import NetworkSpecRules
+from src.features.network_spec.domain.machines.network_spec_machine import (
     NetworkSpecMachine,
     STATUS_PENDING,
     STATUS_ACTIVE,
@@ -14,10 +14,10 @@ from src.features.network_spec.machines.network_spec_machine import (
     STATUS_ARCHIVED,
 )
 from src.features.network_spec.service.network_spec_service import NetworkSpecService
-from src.features.network_spec.repository.network_spec_repository import (
+from src.features.network_spec.infrastructure.adapters.network_spec_repository_adapter import (
     InMemoryNetworkSpecRepository,
 )
-from src.features.network_spec.repository.neural_compute_adapter import (
+from src.features.network_spec.infrastructure.adapters.neural_compute_adapter import (
     PyTorchNeuralComputeAdapter,
 )
 from src.shared.types.envelope_types import TraceContext
@@ -135,7 +135,7 @@ async def test_service_creation_and_pytorch_overfit():
 
 @pytest.mark.asyncio
 async def test_service_dataset_training_and_checkpoint_persistence(tmp_path):
-    from src.features.network_spec.types.network_spec_types import DatasetTrainingCommand
+    from src.features.network_spec.contracts.network_spec_types import DatasetTrainingCommand
     import os
 
     repo = InMemoryNetworkSpecRepository()

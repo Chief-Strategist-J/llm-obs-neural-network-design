@@ -1,8 +1,8 @@
 import time
 import random
 import polars as pl
-from src.features.data_sanitization.rules.data_sanitization_rules import DataSanitizationRules
-from src.features.data_sanitization.types.data_sanitization_types import SanitizationConfigDTO
+from src.features.data_sanitization.domain.rules.data_sanitization_rules import DataSanitizationRules
+from src.features.data_sanitization.contracts.data_sanitization_types import SanitizationConfigDTO
 
 
 def test_polars_scale_benchmark_100k_rows():

@@ -2,16 +2,16 @@ from __future__ import annotations
 import json
 import time
 from typing import Sequence, Mapping, Any
-from src.features.streaming_telemetry_worker.repository.streaming_telemetry_worker_port import (
+from src.features.streaming_telemetry_worker.infrastructure.ports.streaming_telemetry_worker_port import (
     StreamingTelemetryWorkerRepositoryPort,
 )
-from src.features.streaming_telemetry_worker.types.streaming_telemetry_worker_types import (
+from src.features.streaming_telemetry_worker.contracts.streaming_telemetry_worker_types import (
     TelemetrySpanMessageDTO,
     MicroBatchDTO,
     DeadLetterMessageDTO,
     WorkerMetricsDTO,
 )
-from src.features.streaming_telemetry_worker.rules.streaming_telemetry_worker_rules import (
+from src.features.streaming_telemetry_worker.domain.rules.streaming_telemetry_worker_rules import (
     parse_telemetry_span,
     should_flush_buffer,
     build_micro_batch,

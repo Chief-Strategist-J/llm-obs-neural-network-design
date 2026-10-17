@@ -5,7 +5,7 @@ from src.features.system_telemetry_pipeline.index import (
     TelemetryPipelineService,
     InMemoryTelemetryPipelineRepository,
 )
-from src.features.system_telemetry_pipeline.rules.telemetry_split_rules import TelemetrySplitRules
+from src.features.system_telemetry_pipeline.domain.rules.telemetry_split_rules import TelemetrySplitRules
 from src.features.data_sanitization.index import (
     DataSanitizationService,
     InMemoryDataSanitizationRepository,
