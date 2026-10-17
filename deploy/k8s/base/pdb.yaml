@@ -1,5 +1,12 @@
-# Pod Disruption Budget
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: neural_network_design
+  name: neural-network-design-pdb
+  labels:
+    app.kubernetes.io/name: neural-network-design
+    app.kubernetes.io/part-of: llm-obs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: neural-network-design

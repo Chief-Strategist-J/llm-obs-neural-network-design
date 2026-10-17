@@ -1,5 +1,22 @@
-# Ingress routing rules
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: neural_network_design
+  name: neural-network-design-ingress
+  labels:
+    app.kubernetes.io/name: neural-network-design
+    app.kubernetes.io/part-of: llm-obs
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+spec:
+  rules:
+    - host: neural-network-design.llmobs.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: neural-network-design
+                port:
+                  number: 8080

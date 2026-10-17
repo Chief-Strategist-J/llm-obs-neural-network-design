@@ -1,4 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: neural_network_design-prod
+  name: neural-network-design-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: neural-network-design
+    env: prod
+spec:
+  project: neural-network-design
+  source:
+    repoURL: https://github.com/scaibu/llm-obs-python-packages
+    targetRevision: main
+    path: neural-network-design/deploy/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llmobs-prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

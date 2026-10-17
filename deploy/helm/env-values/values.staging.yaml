@@ -1,1 +1,27 @@
-# Staging values
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+
+env:
+  APP_ENV: "staging"
+  PORT: "8080"
+  DATABASE_URL: "postgresql://alloy_admin:alloysecret@alloydb-staging.llmobs.internal:5432/policy_orchestration"
+  DB_POOL_SIZE: "10"
+  DB_TIMEOUT_MS: "5000"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-staging.llmobs.internal:9092"
+  KAFKA_TOPIC_RAW: "telemetry.spans.raw"
+  KAFKA_TOPIC_SANITIZED: "telemetry.spans.sanitized"
+  KAFKA_CONSUMER_GROUP: "neural-network-telemetry-staging-group"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector-staging.llmobs.internal:4317"
+  OTEL_SERVICE_NAME: "neural-network-design-staging"

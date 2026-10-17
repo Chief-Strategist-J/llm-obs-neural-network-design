@@ -1,8 +1,43 @@
-# Declares hostnames, ports & protocols for sibling services
-services:
-  - name: py-service-1
-    port: 8001
-  - name: py-service-2
-    port: 8002
-  - name: node-service-1
-    port: 3000
+version: "1.0"
+service_name: "neural-network-design"
+description: "Topology and communication contracts for neural-network-design within llm-obs platform"
+
+self:
+  port: 8080
+  protocol: "http"
+  health_endpoint: "/health"
+
+dependencies:
+  stateful:
+    database:
+      type: "postgresql"
+      host: "alloydb.llmobs.internal"
+      port: 5432
+      database_name: "policy_orchestration"
+    kafka:
+      type: "kafka"
+      host: "kafka.llmobs.internal"
+      port: 9092
+      topics:
+        inbound:
+          - "telemetry.spans.raw"
+        outbound:
+          - "telemetry.spans.sanitized"
+    cache:
+      type: "redis"
+      host: "redis.llmobs.internal"
+      port: 6379
+
+  sibling_services:
+    - name: "temporal-ewma-worker"
+      port: 8001
+      protocol: "http"
+      description: "Fast-path streaming EWMA baseline filter"
+    - name: "alert-engine"
+      port: 8002
+      protocol: "http"
+      description: "Telemetry anomaly alerting engine"
+    - name: "telemetry-dashboard"
+      port: 3000
+      protocol: "http"
+      description: "Node.js telemetry metrics dashboard"

@@ -1,4 +1,33 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: neural_network_design-set
+  name: neural-network-design-set
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+            cluster: https://kubernetes.default.svc
+          - env: staging
+            cluster: https://kubernetes.default.svc
+          - env: prod
+            cluster: https://kubernetes.default.svc
+  template:
+    metadata:
+      name: 'neural-network-design-{{env}}'
+    spec:
+      project: neural-network-design
+      source:
+        repoURL: https://github.com/scaibu/llm-obs-python-packages
+        targetRevision: main
+        path: 'neural-network-design/deploy/k8s/overlays/{{env}}'
+      destination:
+        server: '{{cluster}}'
+        namespace: 'llmobs-{{env}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

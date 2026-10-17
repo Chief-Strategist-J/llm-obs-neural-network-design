@@ -1,1 +1,25 @@
-# Development values
+replicaCount: 1
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+env:
+  APP_ENV: "development"
+  PORT: "8080"
+  DATABASE_URL: "postgresql://alloy_admin:alloysecret@alloydb-dev.llmobs.internal:5432/policy_orchestration"
+  DB_POOL_SIZE: "5"
+  DB_TIMEOUT_MS: "5000"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-dev.llmobs.internal:9092"
+  KAFKA_TOPIC_RAW: "telemetry.spans.raw"
+  KAFKA_TOPIC_SANITIZED: "telemetry.spans.sanitized"
+  KAFKA_CONSUMER_GROUP: "neural-network-telemetry-dev-group"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector-dev.llmobs.internal:4317"
+  OTEL_SERVICE_NAME: "neural-network-design-dev"

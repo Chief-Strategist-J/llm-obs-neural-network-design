@@ -1,1 +1,43 @@
-{{/* Common Helm template helpers */}}
+{{/*
+Expand the name of the chart.
+*/}}
+{{- define "neural-network-design.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create a default fully qualified app name.
+*/}}
+{{- define "neural-network-design.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Common labels
+*/}}
+{{- define "neural-network-design.labels" -}}
+helm.sh/chart: {{ include "neural-network-design.name" . }}-{{ .Chart.Version | replace "+" "_" }}
+{{ include "neural-network-design.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: llm-obs
+{{- end }}
+
+{{/*
+Selector labels
+*/}}
+{{- define "neural-network-design.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "neural-network-design.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

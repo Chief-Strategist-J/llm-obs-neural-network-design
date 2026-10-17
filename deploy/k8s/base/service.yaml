@@ -1,5 +1,16 @@
-# Kubernetes Service routing
 apiVersion: v1
 kind: Service
 metadata:
-  name: neural_network_design
+  name: neural-network-design
+  labels:
+    app.kubernetes.io/name: neural-network-design
+    app.kubernetes.io/part-of: llm-obs
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: neural-network-design

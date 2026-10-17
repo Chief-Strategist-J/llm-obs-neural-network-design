@@ -1,1 +1,24 @@
-# Package-specific local development build with hot reload
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    bash \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir python-shared pytest pytest-asyncio watchdog
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src
+
+EXPOSE 8080
+
+CMD ["python", "-m", "src.main"]

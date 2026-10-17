@@ -1,4 +1,22 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
+namespace: llmobs-staging
+
 resources:
   - ../../base
+
+namePrefix: staging-
+
+images:
+  - name: ghcr.io/scaibu/neural-network-design
+    newTag: staging-latest
+
+patches:
+  - target:
+      kind: Deployment
+      name: neural-network-design
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2

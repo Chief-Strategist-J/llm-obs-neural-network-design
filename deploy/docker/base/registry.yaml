@@ -1,3 +1,6 @@
-# Container registry endpoints and credentials
 registry:
   url: "ghcr.io/scaibu"
+  namespace: "llm-obs"
+  repository: "neural-network-design"
+  imagePullPolicy: "IfNotPresent"
+  authSecretName: "ghcr-registry-secret"

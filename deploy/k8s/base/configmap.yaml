@@ -1,5 +1,19 @@
-# Injected environment configurations
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: neural_network_design-config
+  name: neural-network-design-config
+  labels:
+    app.kubernetes.io/name: neural-network-design
+    app.kubernetes.io/part-of: llm-obs
+data:
+  APP_ENV: "production"
+  PORT: "8080"
+  DATABASE_URL: "postgresql://alloy_admin:alloysecret@alloydb.llmobs.internal:5432/policy_orchestration"
+  DB_POOL_SIZE: "10"
+  DB_TIMEOUT_MS: "5000"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.llmobs.internal:9092"
+  KAFKA_TOPIC_RAW: "telemetry.spans.raw"
+  KAFKA_TOPIC_SANITIZED: "telemetry.spans.sanitized"
+  KAFKA_CONSUMER_GROUP: "neural-network-telemetry-group"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.llmobs.internal:4317"
+  OTEL_SERVICE_NAME: "neural-network-design"

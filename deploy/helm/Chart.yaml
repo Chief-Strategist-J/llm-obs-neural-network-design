@@ -1,5 +1,13 @@
 apiVersion: v2
-name: neural_network_design
-description: Helm chart for neural_network_design
+name: neural-network-design
+description: Helm chart for neural-network-design service in llm-obs platform
+type: application
 version: 0.1.0
 appVersion: "1.0.0"
+keywords:
+  - telemetry
+  - neural-network
+  - deep-learning
+  - llm-obs
+maintainers:
+  - name: llm-obs-team

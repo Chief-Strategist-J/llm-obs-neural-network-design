@@ -1,2 +1,88 @@
-# Multi-package coordination runner (2 Python + 1 Node.js)
 version: '3.8'
+
+services:
+  neural-network-design:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/service/Dockerfile
+    container_name: neural-network-design
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=development
+      - PORT=8080
+      - DATABASE_URL=postgresql://alloy_admin:alloysecret@postgres:5432/policy_orchestration
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_TOPIC_RAW=telemetry.spans.raw
+      - KAFKA_TOPIC_SANITIZED=telemetry.spans.sanitized
+      - KAFKA_CONSUMER_GROUP=neural-network-telemetry-group
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=neural-network-design
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - llmobs-network
+
+  temporal-ewma-worker:
+    image: ghcr.io/scaibu/temporal-ewma-worker:latest
+    container_name: temporal-ewma-worker
+    ports:
+      - "8001:8001"
+    environment:
+      - APP_ENV=development
+      - PORT=8001
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      - kafka
+    networks:
+      - llmobs-network
+
+  telemetry-dashboard:
+    image: node:20-alpine
+    container_name: telemetry-dashboard
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    command: ["sh", "-c", "echo 'Node telemetry dashboard standing by' && sleep infinity"]
+    networks:
+      - llmobs-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: polyglot-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: alloy_admin
+      POSTGRES_PASSWORD: alloysecret
+      POSTGRES_DB: policy_orchestration
+    networks:
+      - llmobs-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: polyglot-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    networks:
+      - llmobs-network
+
+networks:
+  llmobs-network:
+    driver: bridge
