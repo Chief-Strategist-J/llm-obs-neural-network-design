@@ -1,0 +1,30 @@
+services:
+  neural-network-design:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: neural-network-design
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - PORT=${PORT:-8080}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4317}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://alloy_admin:alloysecret@policy-alloydb:5432/policy_orchestration}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
+      - KAFKA_TOPIC_RAW=${KAFKA_TOPIC_RAW:-telemetry.spans.raw}
+      - KAFKA_TOPIC_SANITIZED=${KAFKA_TOPIC_SANITIZED:-telemetry.spans.sanitized}
+      - KAFKA_CONSUMER_GROUP=${KAFKA_CONSUMER_GROUP:-neural-network-telemetry-group}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - llmobs-network
+
+networks:
+  llmobs-network:
+    external: true
+

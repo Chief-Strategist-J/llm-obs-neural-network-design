@@ -1,0 +1,5 @@
+apiVersion: v2
+name: neural_network_design
+description: Helm chart for neural_network_design
+version: 0.1.0
+appVersion: "1.0.0"
