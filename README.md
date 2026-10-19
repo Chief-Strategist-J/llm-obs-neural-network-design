@@ -8,7 +8,7 @@ Neural Network Design architecture specification, topology validation, parameter
 
 A core architectural tenet of this service is that **deep neural networks should never operate in isolation for distributed systems telemetry**.
 
-[Certain] For streaming distributed telemetry (such as trace cascade failures, temporal worker lag, latency spikes, and microservice anomaly detection), classical statistical baselines (streaming quantile estimation, Exponentially Weighted Moving Average [EWMA], Cumulative Sum [CUSUM], and Gradient Boosted Decision Trees like XGBoost):
+ For streaming distributed telemetry (such as trace cascade failures, temporal worker lag, latency spikes, and microservice anomaly detection), classical statistical baselines (streaming quantile estimation, Exponentially Weighted Moving Average [EWMA], Cumulative Sum [CUSUM], and Gradient Boosted Decision Trees like XGBoost):
 1. **Outperform or match custom deep neural networks** on tabular and metric time-series data.
 2. **Require 1/100th of the operational compute budget**, running with microsecond-level CPU latency and zero GPU cluster infrastructure.
 3. **Offer 100% deterministic explainability**, eliminating black-box uncertainty during mission-critical incident triage.
