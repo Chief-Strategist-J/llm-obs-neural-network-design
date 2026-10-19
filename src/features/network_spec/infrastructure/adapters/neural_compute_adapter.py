@@ -1,4 +1,5 @@
 import os
+import hashlib
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
@@ -44,7 +45,6 @@ class NeuralComputePort(ABC):
     ) -> tuple[int, float, float, float, str, str]:
         pass
 
-
     @abstractmethod
     def save_checkpoint(self, spec_id: str, checkpoint_dir: str) -> str:
         pass
@@ -70,6 +70,24 @@ class ResidualBlock(nn.Module):
         return self.act(out + residual)
 
 
+class SubconsciousLatentNetwork(nn.Module):
+    def __init__(self, hidden_dim: int, layer_count: int) -> None:
+        super().__init__()
+        self.subconscious_blocks = nn.Sequential(
+            *[ResidualBlock(hidden_dim) for _ in range(max(1, layer_count // 2))]
+        )
+        self.latent_norm = nn.LayerNorm(hidden_dim)
+        self.latent_gate = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        subtext = self.subconscious_blocks(x)
+        gate = self.latent_gate(subtext)
+        return self.latent_norm(subtext * gate + x)
+
+
 class PyTorchNeuralArchitecture(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int, num_classes: int, layer_count: int) -> None:
         super().__init__()
@@ -79,8 +97,15 @@ class PyTorchNeuralArchitecture(nn.Module):
             nn.GELU(),
         )
         blocks = [ResidualBlock(hidden_dim) for _ in range(max(1, layer_count))]
-        self.backbone = nn.Sequential(*blocks)
-        self.head = nn.Linear(hidden_dim, num_classes)
+        self.surface_backbone = nn.Sequential(*blocks)
+        self.subconscious_network = SubconsciousLatentNetwork(hidden_dim, layer_count)
+
+        self.intent_head = nn.Linear(hidden_dim, num_classes)
+        self.subconscious_head = nn.Linear(hidden_dim, max(2, num_classes))
+        self.cognitive_fusion = nn.Linear(hidden_dim * 2, hidden_dim)
+        self.fusion_norm = nn.LayerNorm(hidden_dim)
+        self.fusion_head = nn.Linear(hidden_dim, num_classes)
+
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -90,10 +115,23 @@ class PyTorchNeuralArchitecture(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0.0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self.encoder(x)
-        h = self.backbone(h)
-        return self.head(h)
+    def forward(
+        self, x: torch.Tensor, return_all_heads: bool = False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        h_enc = self.encoder(x)
+        h_surface = self.surface_backbone(h_enc)
+        h_subconscious = self.subconscious_network(h_enc)
+
+        logits_intent = self.intent_head(h_surface)
+        logits_subconscious = self.subconscious_head(h_subconscious)
+
+        fused = torch.cat([h_surface, h_subconscious], dim=-1)
+        h_fused = torch.relu(self.fusion_norm(self.cognitive_fusion(fused)))
+        fused_decision = self.fusion_head(h_fused)
+
+        if return_all_heads:
+            return logits_intent, logits_subconscious, fused_decision
+        return fused_decision
 
 
 class PyTorchNeuralComputeAdapter(NeuralComputePort):
@@ -128,8 +166,14 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
 
         for step in range(command.max_steps):
             optimizer.zero_grad()
-            logits = net(inputs)
-            loss = criterion(logits, targets)
+            intent_logits, sub_logits, fused_logits = net(inputs, return_all_heads=True)
+            sub_targets = targets % max(2, model_spec.num_classes)
+
+            loss_intent = criterion(intent_logits, targets)
+            loss_sub = criterion(sub_logits, sub_targets)
+            loss_fused = criterion(fused_logits, targets)
+
+            loss = loss_fused + 0.3 * loss_intent + 0.2 * loss_sub
 
             if step == 0:
                 initial_loss = float(loss.item())
@@ -164,8 +208,10 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
         focal_gamma: float = 2.0,
         class_weights: Sequence[float] | None = None,
     ) -> tuple[int, float, float, float, str, str]:
-        import hashlib
-        from src.features.adaptive_loss.infrastructure.adapters.torch_loss_modules import FocalLoss, ClassBalancedLoss
+        from src.features.adaptive_loss.infrastructure.adapters.torch_loss_modules import (
+            FocalLoss,
+            ClassBalancedLoss,
+        )
 
         device = torch.device("cpu")
         net = PyTorchNeuralArchitecture(
@@ -184,8 +230,8 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
             weight_tensor = torch.tensor(class_weights, dtype=torch.float32) if class_weights else None
             criterion = nn.CrossEntropyLoss(weight=weight_tensor)
 
+        sub_criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
-
 
         x_train = torch.tensor([s[0] for s in train_samples], dtype=torch.float32, device=device)
         y_train = torch.tensor([s[1] for s in train_samples], dtype=torch.long, device=device)
@@ -204,8 +250,14 @@ class PyTorchNeuralComputeAdapter(NeuralComputePort):
             batch_count = 0
             for batch_x, batch_y in loader:
                 optimizer.zero_grad()
-                logits = net(batch_x)
-                loss = criterion(logits, batch_y)
+                intent_logits, sub_logits, fused_logits = net(batch_x, return_all_heads=True)
+                sub_targets = batch_y % max(2, model_spec.num_classes)
+
+                loss_fused = criterion(fused_logits, batch_y)
+                loss_intent = criterion(intent_logits, batch_y)
+                loss_sub = sub_criterion(sub_logits, sub_targets)
+
+                loss = loss_fused + 0.3 * loss_intent + 0.2 * loss_sub
                 loss.backward()
                 nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
                 optimizer.step()
