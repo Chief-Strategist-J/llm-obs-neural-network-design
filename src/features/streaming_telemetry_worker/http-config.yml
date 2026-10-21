@@ -1,0 +1,21 @@
+schema_version: "1.0.0"
+feature_name: "streaming_telemetry_worker"
+profile: "temporal_worker"
+
+client:
+  timeout_seconds: 60.0
+  connect_timeout_seconds: 5.0
+  max_connections: 50
+  max_keepalive_connections: 10
+  keepalive_expiry_seconds: 30.0
+  verify_ssl: true
+  retries: 2
+
+pipeline:
+  steps:
+    - context_isolation
+    - circuit_breaker
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_seconds: 30.0
+    half_open_requests: 3

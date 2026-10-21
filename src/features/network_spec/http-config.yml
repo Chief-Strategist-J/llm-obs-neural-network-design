@@ -1,0 +1,36 @@
+schema_version: "1.0.0"
+feature_name: "network_spec"
+profile: "api_service"
+
+client:
+  timeout_seconds: 30.0
+  connect_timeout_seconds: 5.0
+  max_connections: 100
+  max_keepalive_connections: 20
+  keepalive_expiry_seconds: 30.0
+  verify_ssl: true
+  retries: 3
+
+pipeline:
+  steps:
+    - input_hardening
+    - ssrf_validation
+    - context_isolation
+    - cache_eval
+    - singleflight
+    - circuit_breaker
+    - rate_limit
+    - admission_control
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_seconds: 30.0
+    half_open_requests: 3
+  rate_limit:
+    requests_per_second: 100
+    burst: 200
+  cache_eval:
+    enabled: true
+    default_ttl_seconds: 60
+  security:
+    input_hardening: true
+    ssrf_validation: true
